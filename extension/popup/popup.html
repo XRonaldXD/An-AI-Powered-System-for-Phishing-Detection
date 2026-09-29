@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phishing Link Guard</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🛡️ Phishing Link Guard</h1>
+      <p class="subtitle">An AI-Powered System for Phishing Detection</p>
+    </header>
+
+    <section class="page-summary" id="pageSummary" hidden>
+      <p id="pageSummaryText"></p>
+    </section>
+
+    <section class="analyze-section">
+      <label for="urlInput">Paste a URL to analyze</label>
+      <input id="urlInput" type="text" placeholder="https://example.com" autocomplete="off" />
+      <button id="analyzeBtn" type="button">Analyze Link</button>
+    </section>
+
+    <section id="result" class="result hidden" aria-live="polite">
+      <div class="result-header">
+        <span id="resultLabel" class="badge"></span>
+        <span id="resultScore" class="score"></span>
+      </div>
+      <ul id="resultReasons"></ul>
+    </section>
+
+    <footer>
+      <p>Rule-based scoring today, ready for ML/API upgrades tomorrow.</p>
+    </footer>
+  </div>
+
+  <script src="../lib/risk-engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
