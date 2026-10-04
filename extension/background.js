@@ -5,7 +5,8 @@
  *  - One-time setup on install (default settings in storage).
  *  - Central messaging hub between content scripts and the popup:
  *      - Content scripts report how many suspicious links they found on a
- *        page; we surface that count as a badge on the toolbar icon.
+ *        page; we surface that as a colored badge (blue = none, yellow = medium,
+ *        red = high risk) on the toolbar icon.
  *      - The popup asks for the last scan result of the active tab so it can
  *        show a summary before the user manually analyzes anything.
  *  - Manual URL analysis requests from the popup are also handled here so
@@ -31,12 +32,26 @@ chrome.runtime.onInstalled.addListener(() => {
   console.log("Phishing Link Guard installed.");
 });
 
-function setBadgeForTab(tabId, suspiciousCount) {
+const BADGE_STYLES = {
+  low: { text: "OK", color: "#2563eb" }, // blue: no suspicious links
+  medium: { color: "#eab308" }, // yellow
+  high: { color: "#dc2626" }, // red
+};
+
+/** Derive a page risk level from the number of suspicious links. */
+function getRiskLevel(suspiciousCount) {
+  if (suspiciousCount >= 3) return "high";
+  if (suspiciousCount > 0) return "medium";
+  return "low";
+}
+
+function setBadgeForTab(tabId, suspiciousCount, riskLevel) {
   if (typeof tabId !== "number") return;
 
-  const text = suspiciousCount > 0 ? String(suspiciousCount) : "";
+  const style = BADGE_STYLES[riskLevel] || BADGE_STYLES.low;
+  const text = style.text || String(suspiciousCount);
   chrome.action.setBadgeText({ tabId, text });
-  chrome.action.setBadgeBackgroundColor({ tabId, color: "#dc2626" });
+  chrome.action.setBadgeBackgroundColor({ tabId, color: style.color });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -52,13 +67,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "PAGE_SCAN_RESULT": {
       const tabId = sender.tab && sender.tab.id;
       if (typeof tabId === "number") {
+        const suspiciousLinks = Number(message.suspiciousLinks) || 0;
+        const riskLevel = getRiskLevel(suspiciousLinks);
         tabScanResults.set(tabId, {
           pageUrl: message.pageUrl,
           totalLinks: message.totalLinks,
-          suspiciousLinks: message.suspiciousLinks,
+          suspiciousLinks,
+          riskLevel,
           updatedAt: Date.now(),
         });
-        setBadgeForTab(tabId, message.suspiciousLinks);
+        setBadgeForTab(tabId, suspiciousLinks, riskLevel);
       }
       return undefined;
     }

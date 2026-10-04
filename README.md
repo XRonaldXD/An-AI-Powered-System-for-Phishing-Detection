@@ -12,8 +12,10 @@ risk score with the reasons behind it.
 - **On-page link scanning** — a content script scans every link on the
   current page, visually highlights ones that look suspicious, and asks for
   confirmation before you navigate to them.
-- **Toolbar badge** — the extension icon shows how many suspicious links
-  were found on the current page.
+- **Toolbar badge** — the extension icon badge reflects the page risk:
+  🔵 blue "OK" = no suspicious links, 🟡 yellow = medium risk (1–2
+  suspicious links), 🔴 red = high risk (3 or more). Yellow/red badges show
+  the suspicious link count.
 - **Shared, modular risk engine** — all scoring logic lives in
   [`extension/lib/risk-engine.js`](extension/lib/risk-engine.js) and is
   reused by the popup, the content script, and the background service

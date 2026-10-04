@@ -53,11 +53,14 @@ function loadPageSummary() {
       if (chrome.runtime.lastError || !summary) return;
 
       pageSummary.hidden = false;
-      if (summary.suspiciousLinks > 0) {
+      if (summary.riskLevel === "high") {
         pageSummaryText.textContent =
-          `⚠ Found ${summary.suspiciousLinks} suspicious link(s) out of ${summary.totalLinks} on this page.`;
+          `🔴 High risk: ${summary.suspiciousLinks} suspicious link(s) out of ${summary.totalLinks} on this page.`;
+      } else if (summary.suspiciousLinks > 0) {
+        pageSummaryText.textContent =
+          `🟡 Medium risk: found ${summary.suspiciousLinks} suspicious link(s) out of ${summary.totalLinks} on this page.`;
       } else {
-        pageSummaryText.textContent = `✅ No suspicious links detected among ${summary.totalLinks} scanned.`;
+        pageSummaryText.textContent = `🔵 Low risk: no suspicious links detected among ${summary.totalLinks} scanned.`;
       }
     });
   });
