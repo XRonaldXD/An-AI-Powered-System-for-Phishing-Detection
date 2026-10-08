@@ -83,6 +83,120 @@ function showResult(analysis) {
   }
 }
 
+function setDomainError(message) {
+  domainError.textContent = message || "";
+  domainError.hidden = !message;
+}
+
+async function readLists() {
+  const data = await chrome.storage.local.get(["allowlist", "denylist"]);
+  return {
+    allowlist: Array.isArray(data.allowlist) ? data.allowlist : [],
+    denylist: Array.isArray(data.denylist) ? data.denylist : [],
+  };
+}
+
+function renderDomainList(listEl, key, domains) {
+  listEl.innerHTML = "";
+  if (!domains.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "None yet";
+    listEl.appendChild(li);
+    return;
+  }
+  for (const domain of domains) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = domain;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", `Remove ${domain}`);
+    remove.addEventListener("click", async () => {
+      const lists = await readLists();
+      await chrome.storage.local.set({ [key]: lists[key].filter((d) => d !== domain) });
+      loadLists();
+    });
+    li.append(name, remove);
+    listEl.appendChild(li);
+  }
+}
+
+async function loadLists() {
+  const { allowlist: allowed, denylist: denied } = await readLists();
+  renderDomainList(allowList, "allowlist", allowed);
+  renderDomainList(denyList, "denylist", denied);
+}
+
+async function addDomain(domain, key) {
+  const lists = await readLists();
+  const other = key === "allowlist" ? "denylist" : "allowlist";
+  const update = { [other]: lists[other].filter((d) => d !== domain) };
+  if (!lists[key].includes(domain)) update[key] = lists[key].concat(domain);
+  await chrome.storage.local.set(update);
+  await loadLists();
+}
+
+async function addFromInput(key) {
+  const domain = self.PhishingRiskEngine.normalizeDomain(domainInput.value);
+  if (!domain) {
+    setDomainError("Enter a valid domain, e.g. example.com");
+    return;
+  }
+  setDomainError("");
+  await addDomain(domain, key);
+  domainInput.value = "";
+}
+
+async function addCurrentDomain(key) {
+  if (!currentDomain) return;
+  await addDomain(currentDomain, key);
+  if (input.value.trim()) analyze(input.value.trim());
+}
+
+async function loadHistory() {
+  const data = await chrome.storage.local.get("history");
+  const history = Array.isArray(data.history) ? data.history : [];
+  historyList.innerHTML = "";
+  if (!history.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = "No checks yet";
+    historyList.appendChild(li);
+    return;
+  }
+  for (const entry of history.slice(0, 10)) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = `dot ${labelToClass(entry.label)}`;
+    const url = document.createElement("span");
+    url.className = "history-url";
+    url.textContent = entry.url;
+    url.title = entry.url;
+    const label = document.createElement("span");
+    label.className = "history-label";
+    label.textContent = entry.label;
+    li.append(dot, url, label);
+    historyList.appendChild(li);
+  }
+}
+
+async function loadPageSummary() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || typeof tab.id !== "number") return;
+    chrome.runtime.sendMessage({ type: "GET_TAB_SCAN_RESULT", tabId: tab.id }, (scan) => {
+      if (chrome.runtime.lastError || !scan) return;
+      pageSummaryText.textContent = `This page: ${scan.suspiciousLinks} suspicious of ${scan.totalLinks} links checked.`;
+      pageSummary.hidden = false;
+    });
+  } catch {
+    /* page summary is optional */
+  }
+}
+
 function analyze(value) {
   chrome.runtime.sendMessage({ type: "ANALYZE_URL", url: value }, (analysis) => {
     if (chrome.runtime.lastError || !analysis) {
@@ -129,3 +243,11 @@ openOptions.addEventListener("click", (e) => {
   e.preventDefault();
   chrome.runtime.openOptionsPage();
 });
+
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") button.click();
+});
+
+loadLists();
+loadHistory();
+loadPageSummary();

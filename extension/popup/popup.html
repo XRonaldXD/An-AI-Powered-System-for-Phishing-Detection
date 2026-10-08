@@ -9,7 +9,7 @@
 <body>
   <div class="container">
     <header>
-      <h1>🛡️ Phishing Link Guard</h1>
+      <h1><span class="logo">🛡️</span> Phishing Link Guard</h1>
       <p class="subtitle">An AI-Powered System for Phishing Detection</p>
     </header>
 
@@ -23,8 +23,10 @@
       <button id="analyzeBtn" type="button">Analyze Link</button>
     </section>
 
+    <p id="emptyState" class="empty-state">Paste a link above to see its risk score, the reasons behind it, and which scoring mode produced it.</p>
+
     <section id="result" class="result hidden" aria-live="polite">
-      <p id="resultMode" class="confidence"></p>
+      <p id="resultMode" class="mode-line"></p>
       <div class="result-header">
         <span id="resultLabel" class="badge"></span>
         <span id="resultScore" class="score"></span>
