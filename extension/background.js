@@ -12,16 +12,13 @@
  *  - Manual URL analysis requests from the popup are also handled here so
  *    that all scoring goes through a single code path.
  *  - Keeps a bounded local history of URL analyses and page scan summaries,
- *    and applies the user's allowlist/denylist (chrome.storage.local).
+ *    and applies the user's sensitivity and allowlist/denylist (chrome.storage.local).
  *    Nothing is ever sent off-device.
  */
 
-importScripts("lib/risk-engine.js");
+importScripts("lib/risk-engine.js", "lib/scoring-adapter.js");
 
-const DEFAULT_SETTINGS = {
-  warnOnHighRisk: true,
-  highlightSuspiciousLinks: true,
-};
+const DEFAULT_SETTINGS = self.PhishingScoringAdapter.DEFAULT_SETTINGS;
 
 const MAX_HISTORY_ENTRIES = 50;
 
@@ -36,15 +33,6 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   console.log("Phishing Link Guard installed.");
 });
-
-/** Read the user's domain lists from storage. */
-async function getLists() {
-  const data = await chrome.storage.local.get(["allowlist", "denylist"]);
-  return {
-    allowlist: Array.isArray(data.allowlist) ? data.allowlist : [],
-    denylist: Array.isArray(data.denylist) ? data.denylist : [],
-  };
-}
 
 // Serialize history writes so concurrent messages do not overwrite each other.
 let historyQueue = Promise.resolve();
@@ -96,9 +84,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.type) {
     case "ANALYZE_URL": {
-      getLists()
-        .then((lists) => {
-          const result = self.PhishingRiskEngine.analyzeUrl(message.url, lists);
+      const adapter = self.PhishingScoringAdapter;
+      adapter
+        .loadSettings()
+        .then((settings) => adapter.analyze(message.url, settings))
+        .then((result) => {
           if (result.url) {
             addHistoryEntry({
               type: "url",
@@ -109,7 +99,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           sendResponse(result);
         })
-        .catch(() => sendResponse(self.PhishingRiskEngine.analyzeUrl(message.url)));
+        .catch(() => sendResponse(adapter.analyzeLocal(message.url)));
       return true;
     }
 

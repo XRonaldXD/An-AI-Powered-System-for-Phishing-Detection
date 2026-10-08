@@ -14,6 +14,18 @@ const RISK_THRESHOLDS = Object.freeze({
   MEDIUM: 35,
 });
 
+/** Threshold presets for the user-selectable sensitivity (risk bias) setting. */
+const SENSITIVITY_PRESETS = Object.freeze({
+  low: Object.freeze({ HIGH: 80, MEDIUM: 45 }),
+  balanced: RISK_THRESHOLDS,
+  high: Object.freeze({ HIGH: 55, MEDIUM: 25 }),
+});
+
+/** Thresholds for a sensitivity level; unknown values fall back to "balanced". */
+function getThresholds(sensitivity) {
+  return SENSITIVITY_PRESETS[sensitivity] || SENSITIVITY_PRESETS.balanced;
+}
+
 const SUSPICIOUS_KEYWORDS = Object.freeze([
   "login",
   "verify",
@@ -43,11 +55,13 @@ const KNOWN_URL_SHORTENERS = Object.freeze([
 /**
  * Determine a human-readable risk label from a numeric score.
  * @param {number} score
+ * @param {"low"|"balanced"|"high"} [sensitivity] Optional risk bias (default "balanced").
  * @returns {"Low risk"|"Medium risk"|"High risk"}
  */
-function scoreToLabel(score) {
-  if (score >= RISK_THRESHOLDS.HIGH) return "High risk";
-  if (score >= RISK_THRESHOLDS.MEDIUM) return "Medium risk";
+function scoreToLabel(score, sensitivity) {
+  const thresholds = getThresholds(sensitivity);
+  if (score >= thresholds.HIGH) return "High risk";
+  if (score >= thresholds.MEDIUM) return "Medium risk";
   return "Low risk";
 }
 
@@ -74,11 +88,9 @@ function hostMatchesDomain(hostname, domain) {
 }
 
 /** Estimated confidence (%) in the label: lower near a threshold boundary. */
-function estimateConfidence(score) {
-  const distance = Math.min(
-    Math.abs(score - RISK_THRESHOLDS.MEDIUM),
-    Math.abs(score - RISK_THRESHOLDS.HIGH)
-  );
+function estimateConfidence(score, sensitivity) {
+  const thresholds = getThresholds(sensitivity);
+  const distance = Math.min(Math.abs(score - thresholds.MEDIUM), Math.abs(score - thresholds.HIGH));
   return Math.round(Math.min(95, 55 + distance));
 }
 
@@ -91,7 +103,7 @@ function severityForPoints(points) {
 /**
  * Analyze a URL (string) and return a phishing risk assessment.
  * @param {string} input Raw URL text, e.g. pasted by the user or read from a link on the page.
- * @param {{allowlist?: string[], denylist?: string[]}} [options] User-managed domain lists.
+ * @param {{allowlist?: string[], denylist?: string[], sensitivity?: string}} [options] User-managed domain lists.
  *   Denylisted domains are always High risk; allowlisted domains are suppressed to score 0.
  * @returns {{score: number, label: string, reasons: string[], url: string|null,
  *   signals: {id: string, title: string, points: number, severity: string, explanation: string}[],
@@ -101,6 +113,7 @@ function analyzeUrl(input, options) {
   const trimmed = (input || "").trim();
   const allowlist = (options && options.allowlist) || [];
   const denylist = (options && options.denylist) || [];
+  const sensitivity = options && options.sensitivity;
 
   let url;
   try {
@@ -145,7 +158,7 @@ function analyzeUrl(input, options) {
         severity: "high",
         explanation: "You added this domain to your denylist, so it is always treated as high risk.",
       },
-    ], "denylist");
+    ], "denylist", sensitivity);
   }
   if (allowlist.some((d) => hostMatchesDomain(hostname, d))) {
     return buildResult(url, 0, [
@@ -156,7 +169,7 @@ function analyzeUrl(input, options) {
         severity: "low",
         explanation: "You added this domain to your allowlist, so warnings are suppressed for it.",
       },
-    ], "allowlist");
+    ], "allowlist", sensitivity);
   }
 
   // IP address instead of domain name.
@@ -226,12 +239,12 @@ function analyzeUrl(input, options) {
       "The connection is not encrypted, so anything you type could be seen by others.");
   }
 
-  return buildResult(url, score, signals, null);
+  return buildResult(url, score, signals, null, sensitivity);
 }
 
-function buildResult(url, rawScore, signals, listStatus) {
+function buildResult(url, rawScore, signals, listStatus, sensitivity) {
   const score = Math.min(100, Math.max(0, rawScore));
-  const label = scoreToLabel(score);
+  const label = scoreToLabel(score, sensitivity);
 
   let reasons;
   let summary;
@@ -257,7 +270,7 @@ function buildResult(url, rawScore, signals, listStatus) {
     reasons,
     url: url.href,
     signals,
-    confidence: listStatus ? 100 : estimateConfidence(score),
+    confidence: listStatus ? 100 : estimateConfidence(score, sensitivity),
     summary,
     listStatus,
   };
@@ -266,7 +279,15 @@ function buildResult(url, rawScore, signals, listStatus) {
 // Expose to whichever environment loads this script: browser globals
 // (content scripts, popup, classic service worker via importScripts) and
 // CommonJS/Node (useful for quick local testing).
-const api = { analyzeUrl, scoreToLabel, normalizeDomain, hostMatchesDomain, RISK_THRESHOLDS };
+const api = {
+  analyzeUrl,
+  scoreToLabel,
+  normalizeDomain,
+  hostMatchesDomain,
+  getThresholds,
+  RISK_THRESHOLDS,
+  SENSITIVITY_PRESETS,
+};
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = api;

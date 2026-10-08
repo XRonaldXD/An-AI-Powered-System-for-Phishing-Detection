@@ -8,14 +8,14 @@
  */
 
 (function () {
-  const { analyzeUrl, RISK_THRESHOLDS } = self.PhishingRiskEngine;
+  const adapter = self.PhishingScoringAdapter;
 
   const FLAG_ATTR = "data-phishing-guard-risk";
   const STYLE_ID = "phishing-guard-style";
 
   /** link element -> analysis result for links currently flagged. */
   const flagged = new WeakMap();
-  let lists = { allowlist: [], denylist: [] };
+  let settings = adapter.normalizeSettings({});
   let lastSent = null;
 
   // Badge/outline are pure CSS (attribute-driven) so the page DOM is not modified.
@@ -157,8 +157,9 @@
       // Skip non-http(s) links such as mailto:, tel:, javascript:, or bare anchors.
       if (!/^https?:\/\//i.test(link.href)) continue;
 
-      const result = analyzeUrl(link.href, lists);
-      if (result.score >= RISK_THRESHOLDS.HIGH) {
+      // Bulk scanning stays local; external providers are used for manual checks.
+      const result = adapter.analyzeLocal(link.href, settings);
+      if (result.label === "High risk") {
         if (!flagged.has(link) || flagged.get(link).url !== result.url) flagLink(link, result);
         suspiciousCount += 1;
       } else if (flagged.has(link)) {
@@ -188,20 +189,20 @@
     }
   }
 
-  chrome.storage.local.get(["allowlist", "denylist"], (data) => {
-    lists = {
-      allowlist: Array.isArray(data.allowlist) ? data.allowlist : [],
-      denylist: Array.isArray(data.denylist) ? data.denylist : [],
-    };
+  adapter.loadSettings().then((loaded) => {
+    settings = loaded;
     scheduleScan();
   });
 
-  // Re-apply warnings immediately when the user edits their lists.
+  // Re-apply warnings immediately when the user edits their settings or lists.
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local" || !(changes.allowlist || changes.denylist)) return;
-    if (changes.allowlist) lists.allowlist = changes.allowlist.newValue || [];
-    if (changes.denylist) lists.denylist = changes.denylist.newValue || [];
-    scanLinks();
+    if (area !== "local" || !(changes.allowlist || changes.denylist || changes.settings)) return;
+    adapter.loadSettings().then((loaded) => {
+      settings = loaded;
+      // Force a fresh flag evaluation with the new settings.
+      document.querySelectorAll(`a[${FLAG_ATTR}]`).forEach(unflagLink);
+      scanLinks();
+    });
   });
 
   // Re-scan when the page content changes significantly (e.g. SPA navigation

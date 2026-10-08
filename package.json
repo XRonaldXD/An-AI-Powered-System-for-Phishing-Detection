@@ -1,0 +1,8 @@
+{
+  "name": "phishing-link-guard",
+  "private": true,
+  "description": "Tests for the Phishing Link Guard extension",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
