@@ -17,6 +17,7 @@ const resultSummary = document.getElementById("resultSummary");
 const indicators = document.getElementById("indicators");
 const meterFill = document.getElementById("meterFill");
 const resultConfidence = document.getElementById("resultConfidence");
+const resultMode = document.getElementById("resultMode");
 const resultSignals = document.getElementById("resultSignals");
 const listActions = document.getElementById("listActions");
 const domainInput = document.getElementById("domainInput");
@@ -37,7 +38,8 @@ function showResult(analysis) {
   currentDomain = invalid ? null : self.PhishingRiskEngine.normalizeDomain(analysis.url);
 
   meterFill.style.width = `${analysis.score}%`;
-  resultConfidence.textContent = `Confidence: ${analysis.confidence}%${analysis.listStatus ? " (from your list)" : " (rule-based estimate)"}`;
+  resultConfidence.textContent = `Confidence: ${analysis.confidence}%${analysis.listStatus ? " (from your list)" : analysis.scoringMode === "ml" ? " (local ML estimate)" : " (rule-based estimate)"}`;
+  resultMode.textContent = invalid ? "" : `Mode: ${analysis.scoringMode === "ml" ? "Local ML" : "Rules-based"}`;
 
   resultSignals.innerHTML = "";
   const signals = analysis.signals || [];

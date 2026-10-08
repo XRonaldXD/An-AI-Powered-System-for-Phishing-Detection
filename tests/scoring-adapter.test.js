@@ -1,97 +1,78 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const adapter = require("../extension/lib/scoring-adapter.js");
+const engine = require("../extension/lib/risk-engine.js");
+const mlModel = require("../extension/lib/ml-model.js");
 
-const settings = (provider) =>
-  adapter.normalizeSettings({ settings: { sensitivity: "balanced", provider } });
-const okFetch = (body) => async () => ({ ok: true, json: async () => body });
+const settings = (scoringMode, extra) =>
+  adapter.normalizeSettings({ settings: { sensitivity: "balanced", scoringMode }, ...extra });
 
-test("without provider, behaves like the rule engine", async () => {
-  const r = await adapter.analyze("http://example.com", settings({}));
-  assert.equal(r.score, 10);
-  assert.equal(r.provider, undefined);
-});
-
-test("provider verdict raises score and adds prefixed reasons", async () => {
-  const s = settings({ enabled: true, endpoint: "https://api.example/score", name: "TI" });
-  const r = await adapter.analyze("https://example.com", s, { fetch: okFetch({ score: 90, reasons: ["Known phishing"] }) });
-  assert.equal(r.score, 90);
-  assert.equal(r.label, "High risk");
-  assert.ok(r.reasons.includes("[TI] Known phishing"));
-  assert.equal(r.url, "https://example.com/");
-});
-
-test("probability responses are scaled", async () => {
-  const s = settings({ enabled: true, endpoint: "https://api.example/score" });
-  const r = await adapter.analyze("https://example.com", s, { fetch: okFetch({ probability: 0.5 }) });
-  assert.equal(r.score, 50);
-});
-
-test("falls back to rules on failure or bad response", async () => {
-  const s = settings({ enabled: true, endpoint: "https://api.example/score" });
-  const failing = async () => { throw new Error("offline"); };
-  assert.equal((await adapter.analyze("http://example.com", s, { fetch: failing })).score, 10);
-  assert.equal((await adapter.analyze("http://example.com", s, { fetch: okFetch({ nope: 1 }) })).score, 10);
-  assert.equal((await adapter.analyze("http://example.com", s, { fetch: async () => ({ ok: false }) })).score, 10);
-});
-
-test("non-https endpoint is ignored; allowlisted domains skip provider", async () => {
-  let called = false;
-  const fetch = async () => { called = true; return { ok: true, json: async () => ({ score: 99 }) }; };
-  await adapter.analyze("https://example.com", settings({ enabled: true, endpoint: "http://x" }), { fetch });
-  const s = adapter.normalizeSettings({ allowlist: ["example.com"], settings: { provider: { enabled: true, endpoint: "https://api.example/score" } } });
-  const r = await adapter.analyze("https://example.com", s, { fetch });
-  assert.equal(called, false);
-  assert.equal(r.score, 0);
-});
-
-test("provider scores are clamped and reasons filtered", () => {
-  assert.deepEqual(adapter.parseProviderResponse({ score: 250, reasons: ["a", 5] }), { score: 100, reasons: ["a"] });
-  assert.equal(adapter.parseProviderResponse({ probability: -1 }).score, 0);
-  assert.equal(adapter.parseProviderResponse({ score: "abc" }), null);
-  assert.equal(adapter.parseProviderResponse(null), null);
-});
-
-test("falls back to rules when the provider times out", async () => {
-  const s = settings({ enabled: true, endpoint: "https://api.example/score", timeoutMs: 20 });
-  const hanging = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
-  assert.equal((await adapter.analyze("http://example.com", s, { fetch: hanging })).score, 10);
-});
-
-test("disabled provider is never called", async () => {
-  let called = false;
-  const fetch = async () => { called = true; return { ok: true, json: async () => ({ score: 99 }) }; };
-  await adapter.analyze("http://example.com", settings({ enabled: false, endpoint: "https://api.example/score" }), { fetch });
-  assert.equal(called, false);
-});
-
-const modeSettings = (scoringMode) =>
-  adapter.normalizeSettings({ settings: { scoringMode, provider: { endpoint: "https://api.example/score" } } });
-
-test("scoringMode defaults to rules and is derived for legacy settings", () => {
+test("rules mode is unchanged and is the default", async () => {
+  for (const s of [settings("rules"), adapter.normalizeSettings({})]) {
+    const r = await adapter.analyze("http://example.com", s);
+    const expected = engine.analyzeUrl("http://example.com", { sensitivity: "balanced" });
+    assert.equal(r.score, expected.score);
+    assert.deepEqual(r.reasons, expected.reasons);
+    assert.equal(r.scoringMode, "rules");
+  }
   assert.equal(adapter.normalizeSettings({}).scoringMode, "rules");
+});
+
+test("local ML mode produces a compatible score without any network", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error("network must not be used"); };
+  try {
+    const r = await adapter.analyze("http://secure-paypal-login-verify.xyz/account/update", settings("ml"));
+    assert.equal(r.scoringMode, "ml");
+    assert.ok(r.score >= 70 && r.score <= 100);
+    assert.equal(r.label, "High risk");
+    for (const key of ["reasons", "signals", "confidence", "summary", "url", "listStatus"]) assert.ok(key in r, key);
+    assert.ok(r.reasons.length > 0 && r.signals.length > 0);
+    const clean = await adapter.analyze("https://example.com", settings("ml"));
+    assert.equal(clean.label, "Low risk");
+    assert.ok(clean.score < r.score);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("mode switching changes the result source for the same URL", async () => {
+  const url = "https://192.168.0.1/login";
+  const rules = await adapter.analyze(url, settings("rules"));
+  const ml = await adapter.analyze(url, settings("ml"));
+  assert.equal(rules.scoringMode, "rules");
+  assert.equal(ml.scoringMode, "ml");
   assert.equal(adapter.normalizeSettings({ settings: { scoringMode: "bogus" } }).scoringMode, "rules");
-  assert.equal(adapter.normalizeSettings({ settings: { provider: { enabled: true } } }).scoringMode, "auto");
 });
 
-test("rules mode never calls the model", async () => {
-  let called = false;
-  const fetch = async () => { called = true; return { ok: true, json: async () => ({ score: 99 }) }; };
-  const r = await adapter.analyze("http://example.com", modeSettings("rules"), { fetch });
-  assert.equal(called, false);
-  assert.equal(r.score, 10);
+test("falls back to rules if the model throws, is missing, or returns junk", async () => {
+  const expected = engine.analyzeUrl("http://example.com", { sensitivity: "balanced" });
+  const s = settings("ml");
+  const throwing = { predict() { throw new Error("boom"); } };
+  for (const model of [throwing, null, { predict: () => null }, { predict: () => ({ score: NaN, contributions: [] }) }]) {
+    const r = await adapter.analyze("http://example.com", s, { model });
+    assert.equal(r.score, expected.score);
+    assert.equal(r.scoringMode, "rules");
+  }
 });
 
-test("ml mode uses the model score, even when lower than rules", async () => {
-  const r = await adapter.analyze("http://example.com", modeSettings("ml"), { fetch: okFetch({ score: 5 }) });
-  assert.equal(r.score, 5);
-  assert.equal(r.scoringMode, "ml");
+test("invalid URLs and listed domains are decided by rules in ML mode", async () => {
+  assert.equal((await adapter.analyze("not a url", settings("ml"))).label, "Invalid URL");
+  const allowed = await adapter.analyze("https://example.com", settings("ml", { allowlist: ["example.com"] }));
+  assert.equal(allowed.score, 0);
+  assert.equal(allowed.listStatus, "allowlist");
+  const denied = await adapter.analyze("https://example.com", settings("ml", { denylist: ["example.com"] }));
+  assert.equal(denied.listStatus, "denylist");
 });
 
-test("auto mode takes the higher score; ml mode falls back to rules on failure", async () => {
-  assert.equal((await adapter.analyze("http://example.com", modeSettings("auto"), { fetch: okFetch({ score: 5 }) })).score, 10);
-  const failing = async () => { throw new Error("offline"); };
-  const r = await adapter.analyze("http://example.com", modeSettings("ml"), { fetch: failing });
-  assert.equal(r.score, 10);
-  assert.equal(r.provider, undefined);
+test("analyzeLocal always uses rules, even in ML mode", () => {
+  assert.equal(adapter.analyzeLocal("http://example.com", settings("ml")).scoringMode, "rules");
+});
+
+test("ml model: feature extraction and bounded predictions", () => {
+  assert.equal(mlModel.extractFeatures("not a url with spaces%%"), null);
+  assert.equal(mlModel.extractFeatures("https://192.168.0.1/").isIpHost, 1);
+  assert.equal(mlModel.predict(""), null);
+  const p = mlModel.predict("https://bit.ly/x");
+  assert.ok(p.score >= 0 && p.score <= 100 && p.probability > 0 && p.probability < 1);
 });

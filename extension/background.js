@@ -16,7 +16,7 @@
  *    Nothing is ever sent off-device.
  */
 
-importScripts("lib/risk-engine.js", "lib/scoring-adapter.js");
+importScripts("lib/risk-engine.js", "lib/ml-model.js", "lib/scoring-adapter.js");
 
 const DEFAULT_SETTINGS = self.PhishingScoringAdapter.DEFAULT_SETTINGS;
 

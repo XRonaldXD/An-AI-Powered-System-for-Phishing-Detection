@@ -1,4 +1,4 @@
-/** Options page: sensitivity, allowlist and optional provider settings. */
+/** Options page: sensitivity, allowlist and scoring mode. */
 const adapter = self.PhishingScoringAdapter;
 const engine = self.PhishingRiskEngine;
 
@@ -7,7 +7,7 @@ const domainInput = document.getElementById("domainInput");
 const domainError = document.getElementById("domainError");
 const allowListEl = document.getElementById("allowList");
 const modeEl = document.getElementById("scoringMode");
-const providerStatus = document.getElementById("providerStatus");
+const modeStatus = document.getElementById("modeStatus");
 
 async function saveSettings(patch) {
   const data = await chrome.storage.local.get("settings");
@@ -54,47 +54,22 @@ async function addDomain() {
   renderAllowlist();
 }
 
-async function saveProvider() {
-  const endpoint = document.getElementById("providerEndpoint").value.trim();
-  if (endpoint && !/^https:\/\//i.test(endpoint)) {
-    providerStatus.textContent = "Enter an https:// endpoint.";
-    return;
-  }
-  await saveSettings({
-    provider: {
-      enabled: modeEl.value !== "rules",
-      name: document.getElementById("providerName").value.trim() || adapter.DEFAULT_SETTINGS.provider.name,
-      endpoint,
-      apiKey: document.getElementById("providerKey").value,
-    },
-  });
-  providerStatus.textContent = "Saved.";
-}
-
 async function init() {
   const settings = await adapter.loadSettings();
   sensitivityEl.value = settings.sensitivity;
   modeEl.value = settings.scoringMode;
-  document.getElementById("providerName").value = settings.provider.name;
-  document.getElementById("providerEndpoint").value = settings.provider.endpoint;
-  document.getElementById("providerKey").value = settings.provider.apiKey;
   renderAllowlist();
 }
 
 sensitivityEl.addEventListener("change", () => saveSettings({ sensitivity: sensitivityEl.value }));
 modeEl.addEventListener("change", async () => {
   await saveSettings({ scoringMode: modeEl.value });
-  const { provider } = await adapter.loadSettings();
-  providerStatus.textContent =
-    modeEl.value !== "rules" && !/^https:\/\//i.test(provider.endpoint)
-      ? "Mode saved. Add an https:// endpoint below, otherwise rules are used."
-      : "Mode saved.";
+  modeStatus.textContent = "Mode saved.";
 });
 document.getElementById("addBtn").addEventListener("click", addDomain);
 domainInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") addDomain();
 });
-document.getElementById("saveProviderBtn").addEventListener("click", saveProvider);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.allowlist) renderAllowlist();
 });

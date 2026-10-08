@@ -33,45 +33,36 @@ risk score with the reasons behind it.
 - **Shared, modular risk engine** — all scoring logic lives in
   [`extension/lib/risk-engine.js`](extension/lib/risk-engine.js) and is
   reused by the popup, the content script, and the background service
-  worker, so it is easy to extend or swap in a real ML model / API later.
+  worker, so it is easy to extend.
 
 - **Options page** — open it from the popup's "Settings" link or the
   extension's details page. Choose a sensitivity (Low / Balanced / High,
   which shifts the Medium/High thresholds), manage the trusted-domain
-  allowlist, and optionally configure an external scoring provider.
+  allowlist, and choose the scoring mode (rules-based or local ML).
   Settings are stored in `chrome.storage.local` and applied by the popup,
   content script and background worker.
-- **Pluggable scoring adapter** — [`extension/lib/scoring-adapter.js`](extension/lib/scoring-adapter.js)
-  is the single scoring interface. With a provider enabled, manual URL
-  checks send `POST {"url": "..."}` to your HTTPS endpoint (optional API key
-  placed in the `Authorization` header) and expect `{"score": 0-100}` or
-  `{"probability": 0-1}` plus optional `"reasons": [...]`, which are added
-  to `reasons` prefixed with the provider name. If the provider is
-  unconfigured or fails, the rule-based engine is used. No endpoint or key is
-  bundled; bulk page-link scanning always stays local.
-
-### Quick start: enable AI mode
-
-1. Host any HTTPS endpoint that accepts `POST {"url": "https://..."}` and
-   returns `{"score": 72, "reasons": ["Looks like a brand impersonation"]}`
-   (or `{"probability": 0.72}`).
-2. Open the extension's **Settings**, choose a **Scoring mode** (Rules-based
-   is the default; ML-based uses the model's score; Auto takes the higher of
-   model and rules), paste the endpoint (the placeholder `https://your-model-host.example/score` is only
-   an example), and click **Save endpoint**.
-3. Paste a URL in the popup and click Analyze. The provider's verdict is
-   used per the selected mode. If the mode is Rules-based, the endpoint is
-   missing, unreachable, times out (4 s default) or returns invalid data,
-   the local rule-based result is used automatically.
+- **Two local scoring modes** — pick one in **Settings → Scoring mode**:
+  - **Rules-based** (default): the heuristic engine in `risk-engine.js`.
+  - **Local ML**: a compact logistic-regression model bundled in
+    [`extension/lib/ml-model.js`](extension/lib/ml-model.js). It extracts
+    URL-derived features (IP host, `@`, punycode, shorteners, suspicious TLDs,
+    keywords, subdomains, hyphens, digit ratio, length, entropy, port, path
+    depth), computes a weighted sum, and applies a sigmoid to get a 0–100
+    score. The strongest features become the `reasons`/`signals`.
+  Both modes run entirely in your browser — no endpoint, API key or network
+  request is needed. The popup shows which mode produced each result.
+- **Scoring adapter** — [`extension/lib/scoring-adapter.js`](extension/lib/scoring-adapter.js)
+  is the single scoring interface. Manual popup checks respect the selected
+  mode; if the ML model is unavailable or fails, the rules result is used.
+  Allowlisted/denylisted domains and invalid URLs are always handled by the
+  rules engine, and bulk page-link scanning always stays rules-based for speed.
 
 ## Privacy
 
 The extension is fully local. It reads the links on pages you visit and URLs
 you paste into the popup, scores them with rules running in your browser, and
 stores your allowlist/denylist and recent history in `chrome.storage.local`.
-Nothing is sent to any server or third party unless you explicitly enable an
-external scoring provider on the options page (then only manually checked
-URLs are sent to the endpoint you configured).
+Nothing is sent to any server or third party, in either scoring mode.
 
 ## Project structure
 
@@ -82,8 +73,9 @@ extension/
 ├─ content.js             # Scans links on the page and warns on suspicious ones
 ├─ lib/
 │  ├─ risk-engine.js      # Shared rule-based URL risk-scoring logic
-│  └─ scoring-adapter.js  # Single scoring interface (provider + rule fallback)
-├─ options/                # Options page (sensitivity, allowlist, provider)
+│  ├─ ml-model.js         # Bundled local ML classifier (URL features)
+│  └─ scoring-adapter.js  # Single scoring interface (rules / local ML + fallback)
+├─ options/                # Options page (sensitivity, allowlist, scoring mode)
 ├─ popup/
 │  ├─ popup.html          # Popup UI markup
 │  ├─ popup.css           # Popup styling
@@ -130,4 +122,4 @@ npm test
 ```
 
 Tests live in [`tests/`](tests) and cover `analyzeUrl` edge cases and the
-scoring adapter's provider/fallback behavior.
+scoring adapter's mode switching, local ML and fallback behavior.

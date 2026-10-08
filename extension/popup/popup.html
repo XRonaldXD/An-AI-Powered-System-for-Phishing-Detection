@@ -24,6 +24,7 @@
     </section>
 
     <section id="result" class="result hidden" aria-live="polite">
+      <p id="resultMode" class="confidence"></p>
       <div class="result-header">
         <span id="resultLabel" class="badge"></span>
         <span id="resultScore" class="score"></span>
@@ -77,11 +78,12 @@
 
     <footer>
       <p><a href="#" id="openOptions">Settings</a></p>
-      <p>Rule-based scoring today, ready for ML/API upgrades tomorrow.</p>
+      <p>Rules-based or fully local ML scoring — your choice in Settings.</p>
     </footer>
   </div>
 
   <script src="../lib/risk-engine.js"></script>
+  <script src="../lib/ml-model.js"></script>
   <script src="../lib/scoring-adapter.js"></script>
   <script src="popup.js"></script>
 </body>
