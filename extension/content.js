@@ -116,37 +116,54 @@
   }
 
   // One delegated handler; flagged links are looked up so rescans stay cheap.
-  document.addEventListener(
-    "click",
-    (event) => {
-      const link = event.target instanceof Element ? event.target.closest(`a[${FLAG_ATTR}]`) : null;
-      const result = link && flagged.get(link);
-      if (!result) return;
+  const onLinkActivate = (event) => {
+    if (!settings.warnOnHighRisk) return;
+    const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+    const result = link && flagged.get(link);
+    if (!result) return;
 
-      event.preventDefault();
-      event.stopPropagation();
-      showWarningOverlay(result).then((proceed) => {
-        if (!proceed) return;
-        if (link.target && link.target !== "_self") {
-          window.open(link.href, link.target, "noopener,noreferrer");
-        } else {
-          window.location.href = link.href;
-        }
-      });
+    event.preventDefault();
+    event.stopPropagation();
+    showWarningOverlay(result).then((proceed) => {
+      if (!proceed) return;
+      if (link.target && link.target !== "_self") {
+        window.open(link.href, link.target, "noopener,noreferrer");
+      } else {
+        window.location.href = link.href;
+      }
+    });
+  };
+  document.addEventListener("click", onLinkActivate, true);
+  // Middle-click opens a new tab without firing "click"; block it so the warning cannot be bypassed.
+  document.addEventListener(
+    "auxclick",
+    (event) => {
+      if (event.button !== 1 || !settings.warnOnHighRisk) return;
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (link && flagged.has(link)) onLinkActivate(event);
     },
     true
   );
 
+  /** Page-authored tooltips, restored when a link is no longer flagged. */
+  const originalTitles = new WeakMap();
+
   function flagLink(link, result) {
+    if (!flagged.has(link)) originalTitles.set(link, link.getAttribute("title"));
     flagged.set(link, result);
-    link.setAttribute(FLAG_ATTR, "true");
-    link.title = buildTooltip(result);
+    if (settings.highlightSuspiciousLinks) {
+      link.setAttribute(FLAG_ATTR, "true");
+      link.title = buildTooltip(result);
+    }
   }
 
   function unflagLink(link) {
     flagged.delete(link);
     link.removeAttribute(FLAG_ATTR);
-    link.removeAttribute("title");
+    const original = originalTitles.get(link);
+    originalTitles.delete(link);
+    if (original === null || original === undefined) link.removeAttribute("title");
+    else link.setAttribute("title", original);
   }
 
   function scanLinks() {
@@ -160,7 +177,11 @@
       // Bulk scanning stays local; the local ML mode only applies to manual checks.
       const result = adapter.analyzeLocal(link.href, settings);
       if (result.label === "High risk") {
-        if (!flagged.has(link) || flagged.get(link).url !== result.url) flagLink(link, result);
+        const highlighted = link.hasAttribute(FLAG_ATTR);
+        if (!flagged.has(link) || flagged.get(link).url !== result.url || highlighted !== !!settings.highlightSuspiciousLinks) {
+          if (flagged.has(link)) unflagLink(link);
+          flagLink(link, result);
+        }
         suspiciousCount += 1;
       } else if (flagged.has(link)) {
         unflagLink(link);

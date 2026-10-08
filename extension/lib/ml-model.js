@@ -7,9 +7,9 @@
  * rule engine (`risk-engine.js`) and never calls it.
  */
 (function () {
-  const SHORTENERS = ["bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly"];
+  const SHORTENERS = ["bit.ly", "tinyurl.com", "t.co", "goo.gl", "ow.ly", "is.gd", "buff.ly", "cutt.ly", "rebrand.ly", "rb.gy"];
   const SUSPICIOUS_TLDS = ["zip", "mov", "xyz", "top", "tk", "ml", "ga", "cf", "gq", "click", "country", "support", "work", "loan", "icu", "rest"];
-  const KEYWORDS = ["login", "signin", "verify", "account", "update", "secure", "banking", "password", "confirm", "wallet", "suspend", "paypal", "apple", "microsoft", "amazon", "netflix", "support"];
+  const KEYWORDS = ["login", "signin", "verify", "account", "update", "secure", "bank", "banking", "password", "confirm", "wallet", "suspend", "paypal", "apple", "microsoft", "amazon", "netflix", "support"];
 
   const BIAS = -4.2;
 

@@ -96,3 +96,17 @@ test("sensitivity shifts labels", () => {
   assert.equal(analyzeUrl(mid, { sensitivity: "low" }).label, "Low risk");
   assert.equal(analyzeUrl(mid, { sensitivity: "bogus" }).label, "Medium risk");
 });
+
+test("whole-word keyword matching avoids false positives", () => {
+  assert.deepEqual(ids(analyzeUrl("https://accounts.google.com/")), []);
+  assert.deepEqual(ids(analyzeUrl("https://example.com/bankruptcy")), []);
+  assert.deepEqual(ids(analyzeUrl("https://example.com/secure-login")), ["keywords"]);
+});
+
+test("suspicious TLD, IPv6, public suffix and @handle paths", () => {
+  assert.ok(ids(analyzeUrl("https://example.xyz")).includes("suspicious-tld"));
+  assert.ok(ids(analyzeUrl("https://[2001:db8::1]/")).includes("ip-address"));
+  assert.deepEqual(ids(analyzeUrl("https://www.bbc.co.uk/")), []);
+  assert.ok(ids(analyzeUrl("https://a.b.c.example.co.uk/")).includes("many-subdomains"));
+  assert.deepEqual(ids(analyzeUrl("https://example.com/@user")), []);
+});

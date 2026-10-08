@@ -62,9 +62,12 @@ function showResult(analysis) {
   meterFill.style.width = `${analysis.score}%`;
   const modeLabel = getModeLabel(analysis);
   resultConfidence.textContent = `Confidence: ${analysis.confidence}%${analysis.listStatus ? " (from your list)" : analysis.scoringMode === "ml" ? " (local ML estimate)" : analysis.scoringMode === "trained" ? " (trained model estimate)" : " (rule-based estimate)"}`;
-  resultMode.innerHTML = `Mode: <span class="mode-badge ${analysis.listStatus ? "trained" : analysis.scoringMode || "rules"}">${modeLabel}</span>${getFallbackNote(analysis)}`;
+  const badge = document.createElement("span");
+  badge.className = `mode-badge ${analysis.listStatus ? "trained" : analysis.scoringMode || "rules"}`;
+  badge.textContent = modeLabel;
+  resultMode.replaceChildren("Mode: ", badge, getFallbackNote(analysis));
 
-  resultSignals.innerHTML = "";
+  resultSignals.replaceChildren();
   const signals = analysis.signals || [];
   if (!signals.length && !invalid) {
     const li = document.createElement("li");
@@ -103,7 +106,7 @@ async function readLists() {
 }
 
 function renderDomainList(listEl, key, domains) {
-  listEl.innerHTML = "";
+  listEl.replaceChildren();
   if (!domains.length) {
     const li = document.createElement("li");
     li.className = "empty";
@@ -165,7 +168,7 @@ async function addCurrentDomain(key) {
 async function loadHistory() {
   const data = await chrome.storage.local.get("history");
   const history = Array.isArray(data.history) ? data.history : [];
-  historyList.innerHTML = "";
+  historyList.replaceChildren();
   if (!history.length) {
     const li = document.createElement("li");
     li.className = "empty";
