@@ -117,10 +117,27 @@ test("trained mode falls back to bundled ML, then rules", async () => {
   assert.equal((await adapter.analyze("not a url", settings("trained"))).label, "Invalid URL");
 });
 
-test("no trained model is installed by default and no network is used", async () => {
-  assert.equal(adapter.isTrainedModelAvailable(), false);
+test("trained model threshold calibrates the phishing score", () => {
+  const threshold = 0.7;
+  const names = urlFeatures.FEATURE_NAMES;
+  const model = trainedModel.createModel({
+    featureNames: names,
+    weights: names.map(() => 0),
+    bias: Math.log(threshold / (1 - threshold)),
+    scaler: { mean: names.map(() => 0), std: names.map(() => 1) },
+    phishingThreshold: threshold,
+  });
+
+  assert.ok(model.isAvailable());
+  assert.equal(model.predict("https://example.com").score, 50);
+  assert.equal(trainedModel.isValidArtifact({ ...sampleArtifact(), phishingThreshold: 1.1 }), false);
+});
+
+test("bundled trained model works locally without network", async () => {
+  assert.equal(adapter.isTrainedModelAvailable(), true);
   const r = await adapter.analyze("http://example.com", settings("trained"));
-  assert.equal(r.scoringMode, "ml");
+  assert.equal(r.scoringMode, "trained");
+  assert.ok(r.score >= 0 && r.score <= 100);
 });
 
 test("installed artifact script matches training output and shared feature code", () => {

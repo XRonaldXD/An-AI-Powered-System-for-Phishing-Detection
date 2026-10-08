@@ -71,3 +71,11 @@ test("stratified split handles large datasets without exceeding argument limits"
   assert.equal(te.filter((i) => y[i] === 0).length, 20_000);
   assert.equal(te.filter((i) => y[i] === 1).length, 20_000);
 });
+
+test("phishing threshold selection uses validation accuracy and phishing F1", () => {
+  const selected = t.selectPhishingThreshold([0, 0, 1, 1], [0.3, 0.6, 0.7, 0.9]);
+
+  assert.equal(selected.threshold, 0.61);
+  assert.equal(selected.metrics.accuracy, 1);
+  assert.equal(selected.metrics.recall, 1);
+});

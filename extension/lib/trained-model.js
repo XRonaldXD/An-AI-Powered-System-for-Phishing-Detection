@@ -45,6 +45,8 @@
       a.featureNames.every((name, i) => name === names[i]) &&
       isNumArray(a.weights, n) &&
       typeof a.bias === "number" && Number.isFinite(a.bias) &&
+      (a.phishingThreshold === undefined ||
+        (typeof a.phishingThreshold === "number" && a.phishingThreshold > 0 && a.phishingThreshold < 1)) &&
       !!a.scaler && isNumArray(a.scaler.mean, n) && isNumArray(a.scaler.std, n) &&
       a.scaler.std.every((s) => s > 0)
     );
@@ -70,7 +72,9 @@
         }
       });
       contributions.sort((a, b) => b.contribution - a.contribution);
-      const probability = 1 - 1 / (1 + Math.exp(-logit));
+      const threshold = Number.isFinite(artifact.phishingThreshold) ? artifact.phishingThreshold : 0.5;
+      const thresholdLogit = Math.log(threshold / (1 - threshold));
+      const probability = 1 / (1 + Math.exp(logit - thresholdLogit));
       return {
         probability,
         score: Math.min(100, Math.max(0, Math.round(probability * 100))),

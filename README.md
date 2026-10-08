@@ -52,10 +52,14 @@ risk score with the reasons behind it.
   - **Trained model**: the `phishing-model.json` produced by
     [`ml/train-model.js`](ml/train-model.js), packaged for the extension and
     run by [`extension/lib/trained-model.js`](extension/lib/trained-model.js).
-    Install it with `node ml/train-model.js path/to/new_data_urls.csv --install`
-    (writes `extension/lib/trained-model-data.js`), then reload the extension
-    and choose **Trained model** in Settings. If no valid model is installed
-    or it fails, scoring falls back to Local ML, then to rules.
+    The bundled model uses a validation-selected phishing threshold; training
+    compares epoch counts on validation data and reports metrics on a separate
+    test split.
+    A trained model is bundled. Rebuild or replace it with
+    `node ml/train-model.js path/to/new_data_urls.csv --install` (writes
+    `extension/lib/trained-model-data.js`), then reload the extension and choose
+    **Trained model** in Settings. If no valid model is installed or it fails,
+    scoring falls back to Local ML, then to rules.
   All modes run entirely in your browser — no endpoint, API key or network
   request is needed. The popup shows which mode produced each result.
 - **Scoring adapter** — [`extension/lib/scoring-adapter.js`](extension/lib/scoring-adapter.js)

@@ -170,6 +170,25 @@ function evaluate(yTrue, probLegit, threshold = 0.5) {
   };
 }
 
+/** Select the P(legit) cutoff that maximizes validation accuracy. */
+function selectPhishingThreshold(yTrue, probLegit) {
+  let best = { threshold: 0.5, metrics: evaluate(yTrue, probLegit) };
+  for (let step = 20; step <= 80; step++) {
+    const threshold = step / 100;
+    const metrics = evaluate(yTrue, probLegit, threshold);
+    if (
+      metrics.accuracy > best.metrics.accuracy ||
+      (metrics.accuracy === best.metrics.accuracy && metrics.f1 > best.metrics.f1) ||
+      (metrics.accuracy === best.metrics.accuracy &&
+        metrics.f1 === best.metrics.f1 &&
+        Math.abs(threshold - 0.5) < Math.abs(best.threshold - 0.5))
+    ) {
+      best = { threshold, metrics };
+    }
+  }
+  return best;
+}
+
 function predictProbLegit(model, features) {
   const x = scale(features, model.scaler);
   let z = model.bias;
@@ -191,7 +210,7 @@ function toExtensionScript(artifact) {
 }
 
 function run(argv) {
-  const args = { csv: "new_data_urls.csv", out: path.join(__dirname, "model"), epochs: 30, install: false };
+  const args = { csv: "new_data_urls.csv", out: path.join(__dirname, "model"), epochs: null, install: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--out") args.out = argv[++i];
     else if (argv[i] === "--install") args.install = true;
@@ -206,15 +225,52 @@ function run(argv) {
   console.log("Data cleaning:", JSON.stringify(stats));
   if (new Set(y).size < 2) { console.error("Need both classes to train."); process.exit(1); }
 
-  const { train, test } = stratifiedSplit(y);
+  const outer = stratifiedSplit(y, 0.15, 42);
+  const test = outer.test;
+  const trainValid = outer.train;
+  const inner = stratifiedSplit(trainValid.map((i) => y[i]), 0.17647058823529413, 43);
+  const train = inner.train.map((i) => trainValid[i]);
+  const validation = inner.test.map((i) => trainValid[i]);
+
   const scaler = fitScaler(train.map((i) => X[i]));
   const Xtr = train.map((i) => scale(X[i], scaler));
-  const { weights, bias } = trainLogReg(Xtr, train.map((i) => y[i]), { epochs: args.epochs });
-  const model = { weights, bias, scaler };
+  const ytr = train.map((i) => y[i]);
+  const yValidation = validation.map((i) => y[i]);
+  const epochsToTry = args.epochs === null ? [10, 30, 60] : [args.epochs];
+  const candidates = epochsToTry.map((epochs) => {
+    const learned = trainLogReg(Xtr, ytr, { epochs });
+    const model = { ...learned, scaler };
+    const validationProbabilities = validation.map((i) => predictProbLegit(model, X[i]));
+    const selected = selectPhishingThreshold(yValidation, validationProbabilities);
+    console.log(
+      `Validation (${epochs} epochs): accuracy ${selected.metrics.accuracy.toFixed(4)}, ` +
+      `phishing precision ${selected.metrics.precision.toFixed(4)}, ` +
+      `recall ${selected.metrics.recall.toFixed(4)}, ` +
+      `threshold ${selected.threshold.toFixed(2)}`
+    );
+    return { epochs, threshold: selected.threshold, validationMetrics: selected.metrics };
+  });
+  candidates.sort((a, b) =>
+    b.validationMetrics.accuracy - a.validationMetrics.accuracy ||
+    b.validationMetrics.f1 - a.validationMetrics.f1 ||
+    a.epochs - b.epochs
+  );
+  const selected = candidates[0];
 
-  const metrics = evaluate(test.map((i) => y[i]), test.map((i) => predictProbLegit(model, X[i])));
-  console.log(`Train: ${train.length}  Test: ${test.length}`);
-  console.log(`Accuracy:  ${metrics.accuracy.toFixed(4)}`);
+  const finalScaler = fitScaler(trainValid.map((i) => X[i]));
+  const Xfit = trainValid.map((i) => scale(X[i], finalScaler));
+  const { weights, bias } = trainLogReg(Xfit, trainValid.map((i) => y[i]), { epochs: selected.epochs });
+  const model = { weights, bias, scaler: finalScaler };
+  const yTest = test.map((i) => y[i]);
+  const testProbabilities = test.map((i) => predictProbLegit(model, X[i]));
+  const defaultMetrics = evaluate(yTest, testProbabilities);
+  const metrics = evaluate(yTest, testProbabilities, selected.threshold);
+
+  console.log(`Train: ${train.length}  Validation: ${validation.length}  Test: ${test.length}`);
+  console.log(`Selected epochs: ${selected.epochs}`);
+  console.log(`Selected phishing threshold (P(legit)): ${selected.threshold.toFixed(2)}`);
+  console.log(`Test accuracy at 0.50 threshold: ${defaultMetrics.accuracy.toFixed(4)}`);
+  console.log(`Test accuracy at selected threshold: ${metrics.accuracy.toFixed(4)}`);
   console.log(`Precision: ${metrics.precision.toFixed(4)} (phishing)`);
   console.log(`Recall:    ${metrics.recall.toFixed(4)} (phishing)`);
   console.log(`F1:        ${metrics.f1.toFixed(4)}`);
@@ -227,9 +283,12 @@ function run(argv) {
     description: "P(legit) = sigmoid(bias + sum(weights[i] * (x[i] - mean[i]) / std[i])); status 1 = legit, 0 = phishing.",
     trainedAt: new Date().toISOString(),
     featureNames: FEATURE_NAMES,
-    scaler: scaler,
+    scaler: finalScaler,
     weights,
     bias,
+    phishingThreshold: selected.threshold,
+    selectedEpochs: selected.epochs,
+    defaultMetrics,
     metrics,
     dataStats: stats,
   };
@@ -242,5 +301,5 @@ function run(argv) {
   }
 }
 
-module.exports = { toExtensionScript, parseCsv, buildDataset, stratifiedSplit, fitScaler, trainLogReg, evaluate, predictProbLegit };
+module.exports = { toExtensionScript, parseCsv, buildDataset, stratifiedSplit, fitScaler, trainLogReg, evaluate, selectPhishingThreshold, predictProbLegit };
 if (require.main === module) run(process.argv.slice(2));
