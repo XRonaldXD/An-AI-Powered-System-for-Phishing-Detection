@@ -60,3 +60,14 @@ test("stratified split, training and evaluation work end to end", () => {
   const c = metrics.confusionMatrix;
   assert.equal(c.truePhishing + c.falsePhishing + c.trueLegit + c.falseLegit, te.length);
 });
+
+test("stratified split handles large datasets without exceeding argument limits", () => {
+  const y = Array.from({ length: 200_000 }, (_, i) => i % 2);
+  const { train, test: te } = t.stratifiedSplit(y);
+
+  assert.equal(train.length + te.length, y.length);
+  assert.equal(te.length, 40_000);
+  assert.equal(train.length, 160_000);
+  assert.equal(te.filter((i) => y[i] === 0).length, 20_000);
+  assert.equal(te.filter((i) => y[i] === 1).length, 20_000);
+});

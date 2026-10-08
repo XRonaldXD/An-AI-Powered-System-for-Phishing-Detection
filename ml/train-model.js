@@ -95,8 +95,8 @@ function stratifiedSplit(y, testRatio = 0.2, seed = 42) {
   for (const cls of [0, 1]) {
     const idx = shuffle(y.map((v, i) => (v === cls ? i : -1)).filter((i) => i >= 0), rnd);
     const nTest = Math.round(idx.length * testRatio);
-    test.push(...idx.slice(0, nTest));
-    train.push(...idx.slice(nTest));
+    for (let i = 0; i < nTest; i++) test.push(idx[i]);
+    for (let i = nTest; i < idx.length; i++) train.push(idx[i]);
   }
   return { train: shuffle(train, rnd), test: shuffle(test, rnd) };
 }
