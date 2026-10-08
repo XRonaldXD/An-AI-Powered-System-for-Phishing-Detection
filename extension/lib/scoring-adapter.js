@@ -4,58 +4,42 @@
  *
  *  - `analyzeLocal(url, settings)` is synchronous and uses only the rule-based
  *    engine (used for scanning many page links cheaply).
- *  - `analyze(url, settings)` is async. If an external model / threat-intel
- *    provider is enabled and configured it is queried and blended with the
- *    rule-based result; on any failure (network, timeout, bad response, missing
- *    config) it silently falls back to the rule-based result.
+ *  - `analyze(url, settings)` is async and respects `settings.scoringMode`:
+ *    "rules" (default) or "ml" (the bundled on-device model in `ml-model.js`).
+ *    If the model is unavailable or throws, the rule-based result is returned.
  *
- * Scoring mode (`settings.scoringMode`): "rules" (default, never calls the
- * provider), "ml" (the model's score is used, rules on failure) or "auto"
- * (the higher of model and rules). Page-link scanning is always local.
- *
- * The provider is a generic HTTPS JSON endpoint configured in the options
- * page (no credentials are bundled). It receives `POST {"url": "..."}` and
- * should reply `{"score": 0-100}` or `{"probability": 0-1}`, with optional
- * `"reasons": string[]`. The result shape stays
- * `{ score, label, reasons, url, ... }`.
+ * Everything runs locally: no endpoint, no network calls. Invalid URLs and
+ * allow/deny-listed domains are always decided by the rules engine. The result
+ * shape stays `{ score, label, reasons, signals, confidence, summary, url, listStatus }`
+ * plus `scoringMode` (the mode actually used).
  */
 (function () {
   const engine =
     (typeof globalThis !== "undefined" && globalThis.PhishingRiskEngine) ||
     (typeof require === "function" ? require("./risk-engine.js") : null);
+  const defaultModel =
+    (typeof globalThis !== "undefined" && globalThis.PhishingMlModel) ||
+    (typeof require === "function" ? (() => { try { return require("./ml-model.js"); } catch { return null; } })() : null);
 
-  /** "rules" = local only (default), "ml" = model score, "auto" = blend model + rules. */
-  const SCORING_MODES = Object.freeze(["rules", "ml", "auto"]);
+  /** "rules" = rule engine (default), "ml" = bundled local model. */
+  const SCORING_MODES = Object.freeze(["rules", "ml"]);
 
   const DEFAULT_SETTINGS = Object.freeze({
     scoringMode: "rules",
     warnOnHighRisk: true,
     highlightSuspiciousLinks: true,
     sensitivity: "balanced",
-    provider: Object.freeze({
-      enabled: false,
-      name: "Threat intelligence",
-      endpoint: "", // e.g. "https://your-model-host.example/score"
-      apiKey: "", // optional; sent in the Authorization header
-      timeoutMs: 4000,
-    }),
   });
 
   /** Merge stored settings + lists into one normalized object. */
   function normalizeSettings(data) {
     const stored = (data && data.settings) || {};
-    // Settings saved before scoringMode existed: an enabled provider meant blending.
-    const scoringMode = SCORING_MODES.includes(stored.scoringMode)
-      ? stored.scoringMode
-      : stored.provider && stored.provider.enabled
-        ? "auto"
-        : "rules";
+    const { provider, ...rest } = stored; // drop legacy endpoint settings
     return {
       ...DEFAULT_SETTINGS,
-      ...stored,
-      scoringMode,
+      ...rest,
+      scoringMode: SCORING_MODES.includes(stored.scoringMode) ? stored.scoringMode : "rules",
       sensitivity: engine.SENSITIVITY_PRESETS[stored.sensitivity] ? stored.sensitivity : "balanced",
-      provider: { ...DEFAULT_SETTINGS.provider, ...(stored.provider || {}) },
       allowlist: Array.isArray(data && data.allowlist) ? data.allowlist : [],
       denylist: Array.isArray(data && data.denylist) ? data.denylist : [],
     };
@@ -73,96 +57,62 @@
   }
 
   function analyzeLocal(url, settings) {
-    return engine.analyzeUrl(url, engineOptions(settings));
+    return { ...engine.analyzeUrl(url, engineOptions(settings)), scoringMode: "rules" };
   }
 
-  function providerConfigured(provider) {
-    return !!(provider && /^https:\/\//i.test(provider.endpoint || ""));
-  }
-
-  /** Turn a provider response into { score, reasons } or null if unusable. */
-  function parseProviderResponse(body) {
-    if (!body || typeof body !== "object") return null;
-    let score = Number(body.score);
-    if (body.score === undefined || Number.isNaN(score)) {
-      score = Number(body.probability) * 100;
-    }
-    if (body.score === undefined && body.probability === undefined) return null;
-    if (!Number.isFinite(score)) return null;
-    const reasons = Array.isArray(body.reasons) ? body.reasons.filter((r) => typeof r === "string") : [];
-    return { score: Math.min(100, Math.max(0, Math.round(score))), reasons };
-  }
-
-  async function queryProvider(url, provider, fetchImpl) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Number(provider.timeoutMs) || 4000);
-    try {
-      const headers = { "Content-Type": "application/json" };
-      if (provider.apiKey) headers.Authorization = "Bearer " + provider.apiKey;
-      const response = await fetchImpl(provider.endpoint, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ url }),
-        signal: controller.signal,
-      });
-      if (!response.ok) return null;
-      return parseProviderResponse(await response.json());
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  /**
-   * Score a URL, using the external provider when available.
-   * @param {string} input
-   * @param {object} [settings] Result of `loadSettings()`.
-   * @param {{fetch?: Function}} [deps] Injectable fetch (for tests).
-   */
-  async function analyze(input, settings, deps) {
-    const local = analyzeLocal(input, settings);
-    const provider = settings && settings.provider;
-    const mode = (settings && settings.scoringMode) || "rules";
-    // Rules mode, invalid URLs and allow/deny-listed domains are decided locally.
-    if (mode === "rules" || !local.url || local.listStatus || !providerConfigured(provider)) return local;
-
-    const fetchImpl = (deps && deps.fetch) || (typeof fetch === "function" ? fetch : null);
-    if (!fetchImpl) return local;
-
-    let remote = null;
-    try {
-      remote = await queryProvider(local.url, provider, fetchImpl);
-    } catch {
-      remote = null;
-    }
-    if (!remote) return local;
-
-    const name = provider.name || "Threat intelligence";
-    const score = mode === "ml" ? remote.score : Math.max(local.score, remote.score);
-    const label = engine.scoreToLabel(score, settings.sensitivity);
-    const reasons = remote.reasons.length
-      ? remote.reasons.map((r) => `[${name}] ${r}`)
-      : [`[${name}] Risk score ${remote.score}/100.`];
-    const signals = local.signals.concat({
-      id: "provider",
-      title: `${name} verdict`,
-      points: remote.score,
-      severity: remote.score >= 70 ? "high" : remote.score >= 35 ? "medium" : "low",
-      explanation: remote.reasons[0] || `${name} rated this link ${remote.score}/100.`,
-    });
-    const baseReasons = mode !== "ml" && local.signals.length ? local.reasons : [];
+  /** Build an analysis result from a model prediction. */
+  function buildMlResult(prediction, local, settings) {
+    const score = prediction.score;
+    const label = engine.scoreToLabel(score, settings && settings.sensitivity);
+    const signals = prediction.contributions.slice(0, 6).map((c) => ({
+      id: `ml-${c.name}`,
+      title: c.title,
+      points: Math.max(1, Math.round(c.contribution * 10)),
+      severity: c.contribution >= 2 ? "high" : c.contribution >= 1 ? "medium" : "low",
+      explanation: c.explanation,
+    }));
+    const reasons = signals.length
+      ? signals.map((s) => `${s.title}: ${s.explanation}`)
+      : ["The local model found no common phishing indicators."];
+    const top = signals[0];
+    const summary = top
+      ? `Local ML estimates a ${score}/100 phishing risk. Main factor: ${top.title.toLowerCase()}.`
+      : `Local ML estimates a ${score}/100 phishing risk.`;
     return {
-      ...local,
       score,
       label,
-      reasons: baseReasons.concat(reasons),
+      reasons,
+      url: local.url,
       signals,
-      confidence: Math.max(local.confidence, 80),
-      provider: name,
-      scoringMode: mode,
+      confidence: Math.round(Math.max(prediction.probability, 1 - prediction.probability) * 100),
+      summary,
+      listStatus: null,
+      scoringMode: "ml",
     };
   }
 
-  const api = { analyze, analyzeLocal, loadSettings, normalizeSettings, parseProviderResponse, DEFAULT_SETTINGS, SCORING_MODES };
+  /**
+   * Score a URL according to the selected mode.
+   * @param {string} input
+   * @param {object} [settings] Result of `loadSettings()`.
+   * @param {{model?: {predict: Function}}} [deps] Injectable model (for tests).
+   */
+  async function analyze(input, settings, deps) {
+    const local = analyzeLocal(input, settings);
+    const mode = (settings && settings.scoringMode) || "rules";
+    if (mode !== "ml" || !local.url || local.listStatus) return local;
+
+    try {
+      const model = (deps && "model" in deps ? deps.model : defaultModel);
+      const prediction = model && model.predict(local.url);
+      if (!prediction || !Number.isFinite(prediction.score) || !Array.isArray(prediction.contributions)) return local;
+      return buildMlResult(prediction, local, settings);
+    } catch {
+      return local;
+    }
+  }
+
+  const api = { analyze, analyzeLocal, loadSettings, normalizeSettings, DEFAULT_SETTINGS, SCORING_MODES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof globalThis !== "undefined") globalThis.PhishingScoringAdapter = api;
 })();

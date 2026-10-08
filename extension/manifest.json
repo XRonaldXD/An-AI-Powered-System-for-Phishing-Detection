@@ -30,7 +30,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["lib/risk-engine.js", "lib/scoring-adapter.js", "content.js"],
+      "js": ["lib/risk-engine.js", "lib/ml-model.js", "lib/scoring-adapter.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

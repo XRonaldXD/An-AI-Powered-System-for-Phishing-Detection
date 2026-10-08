@@ -36,28 +36,16 @@
     <section class="panel">
       <h3>Scoring mode</h3>
       <select id="scoringMode">
-        <option value="rules">Rules-based – local only (default)</option>
-        <option value="ml">ML-based – model endpoint for manual checks</option>
-        <option value="auto">Auto – higher of model and rules</option>
+        <option value="rules">Rules-based – default</option>
+        <option value="ml">Local ML – bundled on-device model</option>
       </select>
-      <p class="privacy">Page links are always scored locally with rules. ML and Auto only affect URLs you check manually in the popup, and fall back to rules if the endpoint below is missing, slow or returns invalid data.</p>
-    </section>
-
-    <section class="panel">
-      <h3>ML model endpoint</h3>
-      <p class="privacy">In ML or Auto mode, URLs you check manually are sent to this HTTPS endpoint.</p>
-      <label for="providerName">Name</label>
-      <input id="providerName" type="text" placeholder="Threat intelligence" autocomplete="off" />
-      <label for="providerEndpoint">Endpoint (https)</label>
-      <input id="providerEndpoint" type="text" placeholder="https://your-model-host.example/score" autocomplete="off" />
-      <label for="providerKey">API key (optional)</label>
-      <input id="providerKey" type="password" placeholder="Stored locally" autocomplete="off" />
-      <button type="button" id="saveProviderBtn">Save endpoint</button>
-      <p id="providerStatus" class="privacy" aria-live="polite"></p>
+      <p class="privacy">Both modes run entirely inside your browser: no endpoint, no network requests. Local ML applies to URLs you check manually in the popup and falls back to rules if the model is unavailable. Page links are always scored with rules.</p>
+      <p id="modeStatus" class="privacy" aria-live="polite"></p>
     </section>
   </div>
 
   <script src="../lib/risk-engine.js"></script>
+  <script src="../lib/ml-model.js"></script>
   <script src="../lib/scoring-adapter.js"></script>
   <script src="options.js"></script>
 </body>

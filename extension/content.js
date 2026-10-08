@@ -157,7 +157,7 @@
       // Skip non-http(s) links such as mailto:, tel:, javascript:, or bare anchors.
       if (!/^https?:\/\//i.test(link.href)) continue;
 
-      // Bulk scanning stays local; external providers are used for manual checks.
+      // Bulk scanning stays local; the local ML mode only applies to manual checks.
       const result = adapter.analyzeLocal(link.href, settings);
       if (result.label === "High risk") {
         if (!flagged.has(link) || flagged.get(link).url !== result.url) flagLink(link, result);
