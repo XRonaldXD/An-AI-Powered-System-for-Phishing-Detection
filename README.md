@@ -16,10 +16,31 @@ risk score with the reasons behind it.
   🔵 blue "OK" = no suspicious links, 🟡 yellow = medium risk (1–2
   suspicious links), 🔴 red = high risk (3 or more). Yellow/red badges show
   the suspicious link count.
+- **Clear risk explanation** — every result includes a plain-language
+  summary and a breakdown of each contributing signal (title, severity,
+  points, and why it matters).
+- **Indicators dashboard** — the popup shows the risk label, score meter,
+  a confidence estimate, and the list of detected signals.
+- **Trusted / blocked domains** — manage an allowlist (warnings suppressed,
+  score 0) and a denylist (always High risk) from the popup. Subdomains are
+  included, and the denylist wins if a domain matches both. Lists are saved
+  in `chrome.storage.local` and applied to open pages immediately.
+- **History** — the popup's "Recent checks" shows the latest URL analyses and
+  page scan summaries (capped at the 50 most recent, clearable).
+- **Visual warnings** — risky links get a red outline, a "⚠ Risky link"
+  badge, a tooltip with the top reasons, and an overlay on click that lists
+  every signal with "Go back" / "Continue anyway" choices.
 - **Shared, modular risk engine** — all scoring logic lives in
   [`extension/lib/risk-engine.js`](extension/lib/risk-engine.js) and is
   reused by the popup, the content script, and the background service
   worker, so it is easy to extend or swap in a real ML model / API later.
+
+## Privacy
+
+The extension is fully local. It reads the links on pages you visit and URLs
+you paste into the popup, scores them with rules running in your browser, and
+stores your allowlist/denylist and recent history in `chrome.storage.local`.
+Nothing is sent to any server or third party.
 
 ## Project structure
 
@@ -55,7 +76,8 @@ extension/
 
 Each indicator adds to a 0–100 score, which maps to **Low risk**
 (`< 35`), **Medium risk** (`35–69`), or **High risk** (`≥ 70`). The engine
-returns `{ score, label, reasons, url }`, keeping the same shape for future
+returns `{ score, label, reasons, url, signals, confidence, summary, listStatus }`
+(and accepts optional `{ allowlist, denylist }`), keeping the same shape for future
 upgrades (e.g. calling a machine-learning model or a threat-intel API)
 straightforward.
 
@@ -70,5 +92,5 @@ straightforward.
 
 - Replace/augment the rule-based engine with a trained ML model or a
   threat-intelligence API while keeping the same return shape.
-- Add an options page for user-configurable sensitivity/allowlists.
+- Add an options page for user-configurable sensitivity.
 - Add automated tests for `analyzeUrl` edge cases.
