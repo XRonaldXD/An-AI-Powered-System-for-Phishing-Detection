@@ -64,3 +64,34 @@ test("disabled provider is never called", async () => {
   await adapter.analyze("http://example.com", settings({ enabled: false, endpoint: "https://api.example/score" }), { fetch });
   assert.equal(called, false);
 });
+
+const modeSettings = (scoringMode) =>
+  adapter.normalizeSettings({ settings: { scoringMode, provider: { endpoint: "https://api.example/score" } } });
+
+test("scoringMode defaults to rules and is derived for legacy settings", () => {
+  assert.equal(adapter.normalizeSettings({}).scoringMode, "rules");
+  assert.equal(adapter.normalizeSettings({ settings: { scoringMode: "bogus" } }).scoringMode, "rules");
+  assert.equal(adapter.normalizeSettings({ settings: { provider: { enabled: true } } }).scoringMode, "auto");
+});
+
+test("rules mode never calls the model", async () => {
+  let called = false;
+  const fetch = async () => { called = true; return { ok: true, json: async () => ({ score: 99 }) }; };
+  const r = await adapter.analyze("http://example.com", modeSettings("rules"), { fetch });
+  assert.equal(called, false);
+  assert.equal(r.score, 10);
+});
+
+test("ml mode uses the model score, even when lower than rules", async () => {
+  const r = await adapter.analyze("http://example.com", modeSettings("ml"), { fetch: okFetch({ score: 5 }) });
+  assert.equal(r.score, 5);
+  assert.equal(r.scoringMode, "ml");
+});
+
+test("auto mode takes the higher score; ml mode falls back to rules on failure", async () => {
+  assert.equal((await adapter.analyze("http://example.com", modeSettings("auto"), { fetch: okFetch({ score: 5 }) })).score, 10);
+  const failing = async () => { throw new Error("offline"); };
+  const r = await adapter.analyze("http://example.com", modeSettings("ml"), { fetch: failing });
+  assert.equal(r.score, 10);
+  assert.equal(r.provider, undefined);
+});

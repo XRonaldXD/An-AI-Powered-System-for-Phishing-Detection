@@ -9,6 +9,10 @@
  *    rule-based result; on any failure (network, timeout, bad response, missing
  *    config) it silently falls back to the rule-based result.
  *
+ * Scoring mode (`settings.scoringMode`): "rules" (default, never calls the
+ * provider), "ml" (the model's score is used, rules on failure) or "auto"
+ * (the higher of model and rules). Page-link scanning is always local.
+ *
  * The provider is a generic HTTPS JSON endpoint configured in the options
  * page (no credentials are bundled). It receives `POST {"url": "..."}` and
  * should reply `{"score": 0-100}` or `{"probability": 0-1}`, with optional
@@ -20,7 +24,11 @@
     (typeof globalThis !== "undefined" && globalThis.PhishingRiskEngine) ||
     (typeof require === "function" ? require("./risk-engine.js") : null);
 
+  /** "rules" = local only (default), "ml" = model score, "auto" = blend model + rules. */
+  const SCORING_MODES = Object.freeze(["rules", "ml", "auto"]);
+
   const DEFAULT_SETTINGS = Object.freeze({
+    scoringMode: "rules",
     warnOnHighRisk: true,
     highlightSuspiciousLinks: true,
     sensitivity: "balanced",
@@ -36,9 +44,16 @@
   /** Merge stored settings + lists into one normalized object. */
   function normalizeSettings(data) {
     const stored = (data && data.settings) || {};
+    // Settings saved before scoringMode existed: an enabled provider meant blending.
+    const scoringMode = SCORING_MODES.includes(stored.scoringMode)
+      ? stored.scoringMode
+      : stored.provider && stored.provider.enabled
+        ? "auto"
+        : "rules";
     return {
       ...DEFAULT_SETTINGS,
       ...stored,
+      scoringMode,
       sensitivity: engine.SENSITIVITY_PRESETS[stored.sensitivity] ? stored.sensitivity : "balanced",
       provider: { ...DEFAULT_SETTINGS.provider, ...(stored.provider || {}) },
       allowlist: Array.isArray(data && data.allowlist) ? data.allowlist : [],
@@ -62,7 +77,7 @@
   }
 
   function providerConfigured(provider) {
-    return !!(provider && provider.enabled && /^https:\/\//i.test(provider.endpoint || ""));
+    return !!(provider && /^https:\/\//i.test(provider.endpoint || ""));
   }
 
   /** Turn a provider response into { score, reasons } or null if unusable. */
@@ -106,8 +121,9 @@
   async function analyze(input, settings, deps) {
     const local = analyzeLocal(input, settings);
     const provider = settings && settings.provider;
-    // Invalid URLs and allow/deny-listed domains are decided locally.
-    if (!local.url || local.listStatus || !providerConfigured(provider)) return local;
+    const mode = (settings && settings.scoringMode) || "rules";
+    // Rules mode, invalid URLs and allow/deny-listed domains are decided locally.
+    if (mode === "rules" || !local.url || local.listStatus || !providerConfigured(provider)) return local;
 
     const fetchImpl = (deps && deps.fetch) || (typeof fetch === "function" ? fetch : null);
     if (!fetchImpl) return local;
@@ -121,7 +137,7 @@
     if (!remote) return local;
 
     const name = provider.name || "Threat intelligence";
-    const score = Math.max(local.score, remote.score);
+    const score = mode === "ml" ? remote.score : Math.max(local.score, remote.score);
     const label = engine.scoreToLabel(score, settings.sensitivity);
     const reasons = remote.reasons.length
       ? remote.reasons.map((r) => `[${name}] ${r}`)
@@ -133,7 +149,7 @@
       severity: remote.score >= 70 ? "high" : remote.score >= 35 ? "medium" : "low",
       explanation: remote.reasons[0] || `${name} rated this link ${remote.score}/100.`,
     });
-    const baseReasons = local.signals.length ? local.reasons : [];
+    const baseReasons = mode !== "ml" && local.signals.length ? local.reasons : [];
     return {
       ...local,
       score,
@@ -142,10 +158,11 @@
       signals,
       confidence: Math.max(local.confidence, 80),
       provider: name,
+      scoringMode: mode,
     };
   }
 
-  const api = { analyze, analyzeLocal, loadSettings, normalizeSettings, parseProviderResponse, DEFAULT_SETTINGS };
+  const api = { analyze, analyzeLocal, loadSettings, normalizeSettings, parseProviderResponse, DEFAULT_SETTINGS, SCORING_MODES };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof globalThis !== "undefined") globalThis.PhishingScoringAdapter = api;
 })();
