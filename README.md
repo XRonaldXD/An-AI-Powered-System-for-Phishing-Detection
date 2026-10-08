@@ -50,6 +50,19 @@ risk score with the reasons behind it.
   unconfigured or fails, the rule-based engine is used. No endpoint or key is
   bundled; bulk page-link scanning always stays local.
 
+### Quick start: enable AI mode
+
+1. Host any HTTPS endpoint that accepts `POST {"url": "https://..."}` and
+   returns `{"score": 72, "reasons": ["Looks like a brand impersonation"]}`
+   (or `{"probability": 0.72}`).
+2. Open the extension's **Settings**, tick **Enable provider**, paste the
+   endpoint (the placeholder `https://your-model-host.example/score` is only
+   an example), and click **Save provider**.
+3. Paste a URL in the popup and click Analyze. The provider's verdict is
+   blended with the local score (the higher wins). If the provider is
+   disabled, unreachable, times out (4 s default) or returns invalid data,
+   the local rule-based result is used automatically.
+
 ## Privacy
 
 The extension is fully local. It reads the links on pages you visit and URLs

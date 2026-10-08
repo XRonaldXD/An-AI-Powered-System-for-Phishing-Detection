@@ -68,7 +68,7 @@ function analyze(value) {
   chrome.runtime.sendMessage({ type: "ANALYZE_URL", url: value }, (analysis) => {
     if (chrome.runtime.lastError || !analysis) {
       self.PhishingScoringAdapter.loadSettings()
-        .then((settings) => self.PhishingScoringAdapter.analyzeLocal(value, settings))
+        .then((settings) => self.PhishingScoringAdapter.analyze(value, settings))
         .catch(() => self.PhishingScoringAdapter.analyzeLocal(value))
         .then((fallback) => {
           showResult(fallback);

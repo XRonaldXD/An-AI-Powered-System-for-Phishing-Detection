@@ -44,3 +44,23 @@ test("non-https endpoint is ignored; allowlisted domains skip provider", async (
   assert.equal(called, false);
   assert.equal(r.score, 0);
 });
+
+test("provider scores are clamped and reasons filtered", () => {
+  assert.deepEqual(adapter.parseProviderResponse({ score: 250, reasons: ["a", 5] }), { score: 100, reasons: ["a"] });
+  assert.equal(adapter.parseProviderResponse({ probability: -1 }).score, 0);
+  assert.equal(adapter.parseProviderResponse({ score: "abc" }), null);
+  assert.equal(adapter.parseProviderResponse(null), null);
+});
+
+test("falls back to rules when the provider times out", async () => {
+  const s = settings({ enabled: true, endpoint: "https://api.example/score", timeoutMs: 20 });
+  const hanging = (url, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new Error("aborted"))));
+  assert.equal((await adapter.analyze("http://example.com", s, { fetch: hanging })).score, 10);
+});
+
+test("disabled provider is never called", async () => {
+  let called = false;
+  const fetch = async () => { called = true; return { ok: true, json: async () => ({ score: 99 }) }; };
+  await adapter.analyze("http://example.com", settings({ enabled: false, endpoint: "https://api.example/score" }), { fetch });
+  assert.equal(called, false);
+});
