@@ -1,7 +1,8 @@
 /**
  * URL cleaning + feature extraction for the local phishing-URL model.
- * Dependency-free so it can be reused by the training script, tests and,
- * later, the extension's local inference module.
+ * Dependency-free so it can be reused by the training script, tests and the
+ * extension's trained-model runtime. Keep this file identical to its copy
+ * (ml/url-features.js <-> extension/lib/url-features.js); a test enforces it.
  */
 (function (root) {
   const SUSPICIOUS_WORDS = ["login", "verify", "secure", "update", "bank", "account", "password", "wallet", "confirm", "signin"];

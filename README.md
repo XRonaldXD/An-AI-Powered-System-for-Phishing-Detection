@@ -38,7 +38,7 @@ risk score with the reasons behind it.
 - **Options page** — open it from the popup's "Settings" link or the
   extension's details page. Choose a sensitivity (Low / Balanced / High,
   which shifts the Medium/High thresholds), manage the trusted-domain
-  allowlist, and choose the scoring mode (rules-based, local ML or trained model).
+  allowlist, toggle risky-link highlighting and click confirmation, and choose the scoring mode (rules-based, local ML or trained model).
   Settings are stored in `chrome.storage.local` and applied by the popup,
   content script and background worker.
 - **Three local scoring modes** — pick one in **Settings → Scoring mode**:
@@ -73,6 +73,9 @@ risk score with the reasons behind it.
 The extension is fully local. It reads the links on pages you visit and URLs
 you paste into the popup, scores them with rules running in your browser, and
 stores your allowlist/denylist and recent history in `chrome.storage.local`.
+History includes the URL of every page whose links were scanned (up to 50
+entries, clearable from the popup). The extension only requests the `storage`
+permission; content scripts run on all pages via the manifest.
 Nothing is sent to any server or third party, in either scoring mode.
 
 ## Project structure
@@ -110,7 +113,12 @@ extension/
 - Punycode / IDN domains (often used for lookalike domains)
 - `@` symbols that can hide the real destination
 - Known URL shorteners
+- Suspicious top-level domains (e.g. `.xyz`, `.top`, `.tk`)
 - Missing HTTPS
+
+Keywords are matched as whole words (so `accounts.google.com` is not
+flagged), and IPv6 hosts and common multi-part suffixes such as `.co.uk` are
+handled.
 
 Each indicator adds to a 0–100 score, which maps to **Low risk**
 (`< 35`), **Medium risk** (`35–69`), or **High risk** (`≥ 70`). The engine
@@ -135,4 +143,6 @@ npm test
 ```
 
 Tests live in [`tests/`](tests) and cover `analyzeUrl` edge cases and the
-scoring adapter's mode switching, local ML and fallback behavior.
+scoring adapter's mode switching, local ML and fallback behavior, plus
+consistency checks (the duplicated `url-features.js`, shared keyword/shortener
+lists and manifest permissions). CI runs them on every push.
