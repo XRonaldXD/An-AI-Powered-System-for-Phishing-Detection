@@ -46,13 +46,20 @@
         <summary>Trusted &amp; blocked domains</summary>
         <div class="list-form">
           <input id="domainInput" type="text" placeholder="example.com" autocomplete="off" />
-          <button type="button" id="addAllowBtn" class="small">Trust</button>
-          <button type="button" id="addDenyBtn" class="small danger">Block</button>
+          <button type="button" id="trustDomainBtn" class="small">Trust</button>
+          <button type="button" id="blockDomainBtn" class="small danger">Block</button>
         </div>
-        <h3>Trusted (allowlist)</h3>
-        <ul id="allowList" class="domain-list"></ul>
-        <h3>Blocked (denylist)</h3>
-        <ul id="denyList" class="domain-list"></ul>
+        <p id="domainError" class="error" hidden></p>
+        <div class="list-columns">
+          <div>
+            <h4>Trusted</h4>
+            <ul id="allowList" class="domain-list"></ul>
+          </div>
+          <div>
+            <h4>Blocked</h4>
+            <ul id="denyList" class="domain-list"></ul>
+          </div>
+        </div>
       </details>
     </section>
 
@@ -60,21 +67,17 @@
       <details id="historyPanel">
         <summary>Recent checks</summary>
         <ul id="historyList" class="history-list"></ul>
-        <button type="button" id="clearHistoryBtn" class="small">Clear history</button>
       </details>
     </section>
 
-    <section class="panel">
-      <details>
-        <summary>Privacy</summary>
-        <p class="privacy">
-          Links are checked by rules running entirely in your browser. The
-          extension reads the links on pages you visit and URLs you paste, but
-          nothing is sent off your device. Your lists and the last 50 checks are
-          stored locally in Chrome and can be cleared at any time.
-        </p>
-      </details>
-    </section>
+    <details class="panel" id="privacyPanel">
+      <summary>Privacy &amp; behavior</summary>
+      <p class="privacy">
+        The extension reads the links on pages you visit and URLs you paste, but
+        nothing is sent off your device. Your lists and the last 50 checks are
+        stored locally in Chrome and can be cleared at any time.
+      </p>
+    </details>
 
     <footer>
       <p><a href="#" id="openOptions">Settings</a></p>
