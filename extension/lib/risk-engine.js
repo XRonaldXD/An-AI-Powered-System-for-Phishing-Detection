@@ -3,10 +3,8 @@
  *
  * This module is intentionally rule-based and dependency-free so it can run
  * unmodified in the popup, the content script, and the background service
- * worker. Keeping the scoring logic in one place also makes it easy to swap
- * in (or blend with) a machine-learning model or remote API later on:
- * replace/extend `analyzeUrl` while keeping the same `{ score, label, reasons, ... }`
- * return shape and every caller keeps working.
+ * worker. Optional ML scoring lives in `scoring-adapter.js`, which keeps the
+ * same `{ score, label, reasons, ... }` return shape and every caller keeps working.
  */
 
 const RISK_THRESHOLDS = Object.freeze({
@@ -51,6 +49,19 @@ const KNOWN_URL_SHORTENERS = Object.freeze([
   "rebrand.ly",
   "rb.gy",
 ]);
+
+const SUSPICIOUS_TLDS = Object.freeze([
+  "zip", "mov", "xyz", "top", "tk", "ml", "ga", "cf", "gq", "click", "country", "support", "work", "loan", "icu",
+]);
+
+/** Common two-label public suffixes, so "bbc.co.uk" is not counted as having a subdomain. */
+const MULTI_PART_SUFFIXES = Object.freeze(["co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "co.jp", "co.nz", "co.in", "com.br", "com.cn", "co.za"]);
+
+function countSubdomains(hostname) {
+  const labels = hostname.split(".");
+  const suffixLabels = MULTI_PART_SUFFIXES.some((s) => hostname.endsWith(`.${s}`)) ? 2 : 1;
+  return Math.max(0, labels.length - suffixLabels - 1);
+}
 
 /**
  * Determine a human-readable risk label from a numeric score.
@@ -173,20 +184,21 @@ function analyzeUrl(input, options) {
   }
 
   // IP address instead of domain name.
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith("[")) {
     addSignal("ip-address", "IP address instead of a name", 30,
       "Real websites almost always use a name like example.com. Raw numbers are often used to hide who runs a site.");
   }
 
   // Too many subdomains.
-  const subdomainCount = Math.max(0, hostname.split(".").length - 2);
+  const subdomainCount = countSubdomains(hostname);
   if (subdomainCount >= 3) {
     addSignal("many-subdomains", "Many subdomains", 15,
       "Long chains like login.bank.example.evil.com can make a fake site look like a real one.");
   }
 
   // Suspicious keywords anywhere in the URL.
-  const matchedKeywords = SUSPICIOUS_KEYWORDS.filter((word) => href.includes(word));
+  // Whole-word matches only, so "accounts.google.com" or "bankruptcy" do not trigger it.
+  const matchedKeywords = SUSPICIOUS_KEYWORDS.filter((word) => new RegExp(`(?<![a-z])${word}(?![a-z])`).test(href));
   if (matchedKeywords.length) {
     addSignal("keywords", `Suspicious words: ${matchedKeywords.join(", ")}`,
       Math.min(24, matchedKeywords.length * 8),
@@ -212,9 +224,17 @@ function analyzeUrl(input, options) {
   }
 
   // "@" symbol in the URL can be used to obscure the real destination.
-  if (href.includes("@")) {
+  // A leading "@handle" path segment (e.g. /@user) is a common legitimate pattern.
+  if (url.username || url.password || /[^/]@/.test(url.pathname + url.search)) {
     addSignal("at-symbol", 'Contains an "@" symbol', 20,
       "Everything before an @ in a link is ignored by the browser, so it can be used to make a link look trustworthy.");
+  }
+
+  // Top-level domains frequently abused for phishing.
+  const tld = hostname.split(".").pop();
+  if (!hostname.startsWith("[") && !/^\d+$/.test(tld) && SUSPICIOUS_TLDS.includes(tld)) {
+    addSignal("suspicious-tld", "Suspicious domain ending", 10,
+      `Domains ending in .${tld} are frequently used for scams because they are cheap or free to register.`);
   }
 
   // Known URL shorteners hide the final destination.

@@ -22,8 +22,22 @@ const DEFAULT_SETTINGS = self.PhishingScoringAdapter.DEFAULT_SETTINGS;
 
 const MAX_HISTORY_ENTRIES = 50;
 
-/** In-memory cache of the latest per-tab scan summary: tabId -> summary. */
+/**
+ * Latest per-tab scan summary: tabId -> summary. Mirrored to chrome.storage.session
+ * (cleared when the browser closes) because MV3 service workers are suspended often.
+ */
 const tabScanResults = new Map();
+const scanKey = (tabId) => `scan:${tabId}`;
+
+async function getTabScan(tabId) {
+  if (tabScanResults.has(tabId)) return tabScanResults.get(tabId);
+  try {
+    const data = await chrome.storage.session.get(scanKey(tabId));
+    return data[scanKey(tabId)] || null;
+  } catch {
+    return null;
+  }
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get("settings", (data) => {
@@ -85,6 +99,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
     case "ANALYZE_URL": {
       const adapter = self.PhishingScoringAdapter;
+      if (typeof message.url !== "string") {
+        sendResponse(adapter.analyzeLocal(""));
+        return false;
+      }
       adapter
         .loadSettings()
         .then((settings) => adapter.analyze(message.url, settings))
@@ -108,13 +126,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (typeof tabId === "number") {
         const suspiciousLinks = Number(message.suspiciousLinks) || 0;
         const riskLevel = getRiskLevel(suspiciousLinks);
-        tabScanResults.set(tabId, {
+        const summary = {
           pageUrl: message.pageUrl,
           totalLinks: message.totalLinks,
           suspiciousLinks,
           riskLevel,
           updatedAt: Date.now(),
-        });
+        };
+        tabScanResults.set(tabId, summary);
+        chrome.storage.session.set({ [scanKey(tabId)]: summary }).catch(() => {});
         setBadgeForTab(tabId, suspiciousLinks, riskLevel);
         if (typeof message.pageUrl === "string") {
           addHistoryEntry({
@@ -131,7 +151,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case "GET_TAB_SCAN_RESULT": {
       const tabId = message.tabId;
-      sendResponse(tabScanResults.get(tabId) || null);
+      getTabScan(tabId).then(sendResponse, () => sendResponse(null));
       return true;
     }
 
@@ -142,4 +162,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabScanResults.delete(tabId);
+  chrome.storage.session.remove(scanKey(tabId)).catch(() => {});
 });

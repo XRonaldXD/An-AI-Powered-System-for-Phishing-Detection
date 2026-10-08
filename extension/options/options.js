@@ -9,6 +9,8 @@ const allowListEl = document.getElementById("allowList");
 const modeEl = document.getElementById("scoringMode");
 const activeModeEl = document.getElementById("activeMode");
 const modeStatus = document.getElementById("modeStatus");
+const highlightEl = document.getElementById("highlightLinks");
+const warnEl = document.getElementById("warnOnClick");
 
 async function saveSettings(patch) {
   const data = await chrome.storage.local.get("settings");
@@ -69,11 +71,15 @@ async function init() {
   const settings = await adapter.loadSettings();
   sensitivityEl.value = settings.sensitivity;
   modeEl.value = settings.scoringMode;
+  highlightEl.checked = !!settings.highlightSuspiciousLinks;
+  warnEl.checked = !!settings.warnOnHighRisk;
   renderActiveMode(settings.scoringMode);
   renderAllowlist();
 }
 
 sensitivityEl.addEventListener("change", () => saveSettings({ sensitivity: sensitivityEl.value }));
+highlightEl.addEventListener("change", () => saveSettings({ highlightSuspiciousLinks: highlightEl.checked }));
+warnEl.addEventListener("change", () => saveSettings({ warnOnHighRisk: warnEl.checked }));
 modeEl.addEventListener("change", async () => {
   await saveSettings({ scoringMode: modeEl.value });
   renderActiveMode(modeEl.value);
