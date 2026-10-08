@@ -7,6 +7,7 @@ const domainInput = document.getElementById("domainInput");
 const domainError = document.getElementById("domainError");
 const allowListEl = document.getElementById("allowList");
 const modeEl = document.getElementById("scoringMode");
+const activeModeEl = document.getElementById("activeMode");
 const modeStatus = document.getElementById("modeStatus");
 
 async function saveSettings(patch) {
@@ -54,16 +55,28 @@ async function addDomain() {
   renderAllowlist();
 }
 
+const MODE_LABELS = { rules: "Rules-based", ml: "Local ML", trained: "Trained model" };
+
+function renderActiveMode(mode) {
+  let text = `Active scoring mode: ${MODE_LABELS[mode] || MODE_LABELS.rules}`;
+  if (mode === "trained" && !adapter.isTrainedModelAvailable()) {
+    text += " — no trained model installed, using Local ML instead (run: node ml/train-model.js <csv> --install, then reload the extension).";
+  }
+  activeModeEl.textContent = text;
+}
+
 async function init() {
   const settings = await adapter.loadSettings();
   sensitivityEl.value = settings.sensitivity;
   modeEl.value = settings.scoringMode;
+  renderActiveMode(settings.scoringMode);
   renderAllowlist();
 }
 
 sensitivityEl.addEventListener("change", () => saveSettings({ sensitivity: sensitivityEl.value }));
 modeEl.addEventListener("change", async () => {
   await saveSettings({ scoringMode: modeEl.value });
+  renderActiveMode(modeEl.value);
   modeStatus.textContent = "Mode saved.";
 });
 document.getElementById("addBtn").addEventListener("click", addDomain);

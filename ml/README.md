@@ -18,3 +18,7 @@ Cleaning: URLs without a scheme get `https://`; empty/malformed URLs, non-http(s
 - `metrics.json` – accuracy, precision, recall, F1 and confusion matrix (phishing is the positive class).
 
 Tests: `npm test`.
+
+## Use it in the extension
+
+`node ml/train-model.js <csv> --install` also writes `extension/lib/trained-model-data.js` (the artifact as a script). Reload the extension and select **Trained model** under Settings → Scoring mode. `extension/lib/url-features.js` must stay identical to `ml/url-features.js`.

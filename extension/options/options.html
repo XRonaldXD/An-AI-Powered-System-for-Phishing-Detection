@@ -38,14 +38,19 @@
       <select id="scoringMode">
         <option value="rules">Rules-based – default</option>
         <option value="ml">Local ML – bundled on-device model</option>
+        <option value="trained">Trained model – artifact from ml/train-model.js</option>
       </select>
-      <p class="privacy">Both modes run entirely inside your browser: no endpoint, no network requests. Local ML applies to URLs you check manually in the popup and falls back to rules if the model is unavailable. Page links are always scored with rules.</p>
+      <p class="privacy">All modes run entirely inside your browser: no endpoint, no network requests. Local ML and Trained model apply to URLs you check manually in the popup. The trained model falls back to Local ML, then to rules, if it is not installed or fails. Page links are always scored with rules.</p>
+      <p id="activeMode" class="mode-line" aria-live="polite"></p>
       <p id="modeStatus" class="privacy" aria-live="polite"></p>
     </section>
   </div>
 
   <script src="../lib/risk-engine.js"></script>
   <script src="../lib/ml-model.js"></script>
+  <script src="../lib/url-features.js"></script>
+  <script src="../lib/trained-model-data.js"></script>
+  <script src="../lib/trained-model.js"></script>
   <script src="../lib/scoring-adapter.js"></script>
   <script src="options.js"></script>
 </body>
