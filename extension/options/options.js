@@ -6,6 +6,7 @@ const sensitivityEl = document.getElementById("sensitivity");
 const domainInput = document.getElementById("domainInput");
 const domainError = document.getElementById("domainError");
 const allowListEl = document.getElementById("allowList");
+const modeEl = document.getElementById("scoringMode");
 const providerStatus = document.getElementById("providerStatus");
 
 async function saveSettings(patch) {
@@ -55,14 +56,13 @@ async function addDomain() {
 
 async function saveProvider() {
   const endpoint = document.getElementById("providerEndpoint").value.trim();
-  const enabled = document.getElementById("providerEnabled").checked;
-  if (enabled && !/^https:\/\//i.test(endpoint)) {
-    providerStatus.textContent = "Enter an https:// endpoint to enable the provider.";
+  if (endpoint && !/^https:\/\//i.test(endpoint)) {
+    providerStatus.textContent = "Enter an https:// endpoint.";
     return;
   }
   await saveSettings({
     provider: {
-      enabled,
+      enabled: modeEl.value !== "rules",
       name: document.getElementById("providerName").value.trim() || adapter.DEFAULT_SETTINGS.provider.name,
       endpoint,
       apiKey: document.getElementById("providerKey").value,
@@ -74,7 +74,7 @@ async function saveProvider() {
 async function init() {
   const settings = await adapter.loadSettings();
   sensitivityEl.value = settings.sensitivity;
-  document.getElementById("providerEnabled").checked = settings.provider.enabled;
+  modeEl.value = settings.scoringMode;
   document.getElementById("providerName").value = settings.provider.name;
   document.getElementById("providerEndpoint").value = settings.provider.endpoint;
   document.getElementById("providerKey").value = settings.provider.apiKey;
@@ -82,6 +82,14 @@ async function init() {
 }
 
 sensitivityEl.addEventListener("change", () => saveSettings({ sensitivity: sensitivityEl.value }));
+modeEl.addEventListener("change", async () => {
+  await saveSettings({ scoringMode: modeEl.value });
+  const { provider } = await adapter.loadSettings();
+  providerStatus.textContent =
+    modeEl.value !== "rules" && !/^https:\/\//i.test(provider.endpoint)
+      ? "Mode saved. Add an https:// endpoint below, otherwise rules are used."
+      : "Mode saved.";
+});
 document.getElementById("addBtn").addEventListener("click", addDomain);
 domainInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") addDomain();

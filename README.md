@@ -55,12 +55,13 @@ risk score with the reasons behind it.
 1. Host any HTTPS endpoint that accepts `POST {"url": "https://..."}` and
    returns `{"score": 72, "reasons": ["Looks like a brand impersonation"]}`
    (or `{"probability": 0.72}`).
-2. Open the extension's **Settings**, tick **Enable provider**, paste the
-   endpoint (the placeholder `https://your-model-host.example/score` is only
-   an example), and click **Save provider**.
+2. Open the extension's **Settings**, choose a **Scoring mode** (Rules-based
+   is the default; ML-based uses the model's score; Auto takes the higher of
+   model and rules), paste the endpoint (the placeholder `https://your-model-host.example/score` is only
+   an example), and click **Save endpoint**.
 3. Paste a URL in the popup and click Analyze. The provider's verdict is
-   blended with the local score (the higher wins). If the provider is
-   disabled, unreachable, times out (4 s default) or returns invalid data,
+   used per the selected mode. If the mode is Rules-based, the endpoint is
+   missing, unreachable, times out (4 s default) or returns invalid data,
    the local rule-based result is used automatically.
 
 ## Privacy
