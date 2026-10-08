@@ -38,10 +38,10 @@ risk score with the reasons behind it.
 - **Options page** — open it from the popup's "Settings" link or the
   extension's details page. Choose a sensitivity (Low / Balanced / High,
   which shifts the Medium/High thresholds), manage the trusted-domain
-  allowlist, and choose the scoring mode (rules-based or local ML).
+  allowlist, and choose the scoring mode (rules-based, local ML or trained model).
   Settings are stored in `chrome.storage.local` and applied by the popup,
   content script and background worker.
-- **Two local scoring modes** — pick one in **Settings → Scoring mode**:
+- **Three local scoring modes** — pick one in **Settings → Scoring mode**:
   - **Rules-based** (default): the heuristic engine in `risk-engine.js`.
   - **Local ML**: a compact logistic-regression model bundled in
     [`extension/lib/ml-model.js`](extension/lib/ml-model.js). It extracts
@@ -49,7 +49,14 @@ risk score with the reasons behind it.
     keywords, subdomains, hyphens, digit ratio, length, entropy, port, path
     depth), computes a weighted sum, and applies a sigmoid to get a 0–100
     score. The strongest features become the `reasons`/`signals`.
-  Both modes run entirely in your browser — no endpoint, API key or network
+  - **Trained model**: the `phishing-model.json` produced by
+    [`ml/train-model.js`](ml/train-model.js), packaged for the extension and
+    run by [`extension/lib/trained-model.js`](extension/lib/trained-model.js).
+    Install it with `node ml/train-model.js path/to/new_data_urls.csv --install`
+    (writes `extension/lib/trained-model-data.js`), then reload the extension
+    and choose **Trained model** in Settings. If no valid model is installed
+    or it fails, scoring falls back to Local ML, then to rules.
+  All modes run entirely in your browser — no endpoint, API key or network
   request is needed. The popup shows which mode produced each result.
 - **Scoring adapter** — [`extension/lib/scoring-adapter.js`](extension/lib/scoring-adapter.js)
   is the single scoring interface. Manual popup checks respect the selected
@@ -74,7 +81,9 @@ extension/
 ├─ lib/
 │  ├─ risk-engine.js      # Shared rule-based URL risk-scoring logic
 │  ├─ ml-model.js         # Bundled local ML classifier (URL features)
-│  └─ scoring-adapter.js  # Single scoring interface (rules / local ML + fallback)
+│  ├─ url-features.js     # Feature extraction (copy of ml/url-features.js)
+│  ├─ trained-model*.js   # Trained model runtime + installed artifact data
+│  └─ scoring-adapter.js  # Single scoring interface (rules / ML / trained + fallback)
 ├─ options/                # Options page (sensitivity, allowlist, scoring mode)
 ├─ popup/
 │  ├─ popup.html          # Popup UI markup

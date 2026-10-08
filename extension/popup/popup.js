@@ -40,6 +40,12 @@ function getModeLabel(analysis) {
   return "Rules-based";
 }
 
+function getFallbackNote(analysis) {
+  return analysis.requestedMode === "trained" && analysis.scoringMode !== "trained"
+    ? " — trained model unavailable, using " + getModeLabel(analysis)
+    : "";
+}
+
 function showResult(analysis) {
   const invalid = analysis.label === "Invalid URL";
   result.classList.remove("hidden", "low", "medium", "high", "invalid");
@@ -56,7 +62,7 @@ function showResult(analysis) {
   meterFill.style.width = `${analysis.score}%`;
   const modeLabel = getModeLabel(analysis);
   resultConfidence.textContent = `Confidence: ${analysis.confidence}%${analysis.listStatus ? " (from your list)" : analysis.scoringMode === "ml" ? " (local ML estimate)" : analysis.scoringMode === "trained" ? " (trained model estimate)" : " (rule-based estimate)"}`;
-  resultMode.innerHTML = `Mode: <span class="mode-badge ${analysis.listStatus ? "trained" : analysis.scoringMode || "rules"}">${modeLabel}</span>`;
+  resultMode.innerHTML = `Mode: <span class="mode-badge ${analysis.listStatus ? "trained" : analysis.scoringMode || "rules"}">${modeLabel}</span>${getFallbackNote(analysis)}`;
 
   resultSignals.innerHTML = "";
   const signals = analysis.signals || [];

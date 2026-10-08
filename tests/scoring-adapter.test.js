@@ -76,3 +76,63 @@ test("ml model: feature extraction and bounded predictions", () => {
   const p = mlModel.predict("https://bit.ly/x");
   assert.ok(p.score >= 0 && p.score <= 100 && p.probability > 0 && p.probability < 1);
 });
+
+const trainedModel = require("../extension/lib/trained-model.js");
+const urlFeatures = require("../extension/lib/url-features.js");
+const t = require("../ml/train-model.js");
+
+function sampleArtifact() {
+  const names = urlFeatures.FEATURE_NAMES;
+  const weights = names.map((n) => (n === "has_https" ? 1.5 : n === "has_suspicious_keyword" ? -2 : n === "has_ip" ? -3 : 0));
+  return {
+    featureNames: names,
+    weights,
+    bias: 0,
+    scaler: { mean: names.map(() => 0), std: names.map(() => 1) },
+  };
+}
+
+test("trained mode uses the trained model artifact", async () => {
+  const model = trainedModel.createModel(sampleArtifact());
+  assert.ok(model.isAvailable());
+  const r = await adapter.analyze("http://192.168.0.1/login", settings("trained"), { trainedModel: model });
+  assert.equal(r.scoringMode, "trained");
+  assert.ok(r.score > 50);
+  assert.ok(r.signals.length > 0 && r.signals[0].id.startsWith("trained-"));
+  const safe = await adapter.analyze("https://example.com", settings("trained"), { trainedModel: model });
+  assert.ok(safe.score < r.score);
+});
+
+test("trained mode falls back to bundled ML, then rules", async () => {
+  const url = "http://secure-paypal-login-verify.xyz/account";
+  const bad = [null, { predict() { throw new Error("boom"); } }, trainedModel.createModel(null), trainedModel.createModel({ bogus: 1 })];
+  for (const m of bad) {
+    const r = await adapter.analyze(url, settings("trained"), { trainedModel: m });
+    assert.equal(r.scoringMode, "ml");
+    assert.equal(r.requestedMode, "trained");
+  }
+  const r = await adapter.analyze("http://example.com", settings("trained"), { trainedModel: null, model: null });
+  assert.equal(r.scoringMode, "rules");
+  assert.equal(r.requestedMode, "trained");
+  assert.equal((await adapter.analyze("not a url", settings("trained"))).label, "Invalid URL");
+});
+
+test("no trained model is installed by default and no network is used", async () => {
+  assert.equal(adapter.isTrainedModelAvailable(), false);
+  const r = await adapter.analyze("http://example.com", settings("trained"));
+  assert.equal(r.scoringMode, "ml");
+});
+
+test("installed artifact script matches training output and shared feature code", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  assert.equal(
+    fs.readFileSync(path.join(__dirname, "../extension/lib/url-features.js"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "../ml/url-features.js"), "utf8"),
+  );
+  const script = t.toExtensionScript(sampleArtifact());
+  const mod = { exports: null };
+  new Function("module", script)(mod);
+  delete globalThis.PhishingTrainedModelData;
+  assert.ok(trainedModel.isValidArtifact(mod.exports));
+});
