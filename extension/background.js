@@ -11,6 +11,9 @@
  *        show a summary before the user manually analyzes anything.
  *  - Manual URL analysis requests from the popup are also handled here so
  *    that all scoring goes through a single code path.
+ *  - Keeps a bounded local history of URL analyses and page scan summaries,
+ *    and applies the user's allowlist/denylist (chrome.storage.local).
+ *    Nothing is ever sent off-device.
  */
 
 importScripts("lib/risk-engine.js");
@@ -19,6 +22,8 @@ const DEFAULT_SETTINGS = {
   warnOnHighRisk: true,
   highlightSuspiciousLinks: true,
 };
+
+const MAX_HISTORY_ENTRIES = 50;
 
 /** In-memory cache of the latest per-tab scan summary: tabId -> summary. */
 const tabScanResults = new Map();
@@ -31,6 +36,38 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   console.log("Phishing Link Guard installed.");
 });
+
+/** Read the user's domain lists from storage. */
+async function getLists() {
+  const data = await chrome.storage.local.get(["allowlist", "denylist"]);
+  return {
+    allowlist: Array.isArray(data.allowlist) ? data.allowlist : [],
+    denylist: Array.isArray(data.denylist) ? data.denylist : [],
+  };
+}
+
+// Serialize history writes so concurrent messages do not overwrite each other.
+let historyQueue = Promise.resolve();
+
+/**
+ * Add an entry to the history (newest first), capped at MAX_HISTORY_ENTRIES.
+ * Page scans replace the previous entry for the same page so rescans of a
+ * dynamic page do not flood the log.
+ */
+function addHistoryEntry(entry) {
+  historyQueue = historyQueue
+    .then(async () => {
+      const data = await chrome.storage.local.get("history");
+      let history = Array.isArray(data.history) ? data.history : [];
+      if (entry.type === "page") {
+        history = history.filter((e) => !(e.type === "page" && e.url === entry.url));
+      }
+      history.unshift({ ...entry, timestamp: Date.now() });
+      await chrome.storage.local.set({ history: history.slice(0, MAX_HISTORY_ENTRIES) });
+    })
+    .catch((err) => console.error("Failed to save history", err));
+  return historyQueue;
+}
 
 const BADGE_STYLES = {
   low: { text: "OK", color: "#2563eb" }, // blue: no suspicious links
@@ -59,8 +96,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   switch (message.type) {
     case "ANALYZE_URL": {
-      const result = self.PhishingRiskEngine.analyzeUrl(message.url);
-      sendResponse(result);
+      getLists()
+        .then((lists) => {
+          const result = self.PhishingRiskEngine.analyzeUrl(message.url, lists);
+          if (result.url) {
+            addHistoryEntry({
+              type: "url",
+              url: result.url,
+              label: result.label,
+              score: result.score,
+            });
+          }
+          sendResponse(result);
+        })
+        .catch(() => sendResponse(self.PhishingRiskEngine.analyzeUrl(message.url)));
       return true;
     }
 
@@ -77,6 +126,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           updatedAt: Date.now(),
         });
         setBadgeForTab(tabId, suspiciousLinks, riskLevel);
+        if (typeof message.pageUrl === "string") {
+          addHistoryEntry({
+            type: "page",
+            url: message.pageUrl,
+            label: riskLevel === "high" ? "High risk" : riskLevel === "medium" ? "Medium risk" : "Low risk",
+            totalLinks: Number(message.totalLinks) || 0,
+            suspiciousLinks,
+          });
+        }
       }
       return undefined;
     }
