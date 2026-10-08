@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phishing Link Guard – Settings</title>
+  <link rel="stylesheet" href="../popup/popup.css" />
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🛡️ Phishing Link Guard settings</h1>
+      <p class="subtitle">Changes are saved automatically and apply to the popup, open pages and the background worker.</p>
+    </header>
+
+    <section class="panel">
+      <h3>Sensitivity</h3>
+      <select id="sensitivity">
+        <option value="low">Low – fewer warnings (Medium ≥ 45, High ≥ 80)</option>
+        <option value="balanced">Balanced – default (Medium ≥ 35, High ≥ 70)</option>
+        <option value="high">High – more warnings (Medium ≥ 25, High ≥ 55)</option>
+      </select>
+    </section>
+
+    <section class="panel">
+      <h3>Trusted domains (allowlist)</h3>
+      <div class="list-form">
+        <input id="domainInput" type="text" placeholder="example.com" autocomplete="off" />
+        <button type="button" id="addBtn" class="small">Add</button>
+      </div>
+      <p id="domainError" class="error" hidden></p>
+      <ul id="allowList" class="domain-list"></ul>
+    </section>
+
+    <section class="panel">
+      <h3>External scoring provider (optional)</h3>
+      <p class="privacy">When enabled, URLs you check manually are sent to this HTTPS endpoint. If it is unreachable, the built-in rules are used.</p>
+      <label><input type="checkbox" id="providerEnabled" /> Enable provider</label>
+      <label for="providerName">Name</label>
+      <input id="providerName" type="text" placeholder="Threat intelligence" autocomplete="off" />
+      <label for="providerEndpoint">Endpoint (https)</label>
+      <input id="providerEndpoint" type="text" placeholder="https://your-model-host.example/score" autocomplete="off" />
+      <label for="providerKey">API key (optional)</label>
+      <input id="providerKey" type="password" placeholder="Stored locally" autocomplete="off" />
+      <button type="button" id="saveProviderBtn">Save provider</button>
+      <p id="providerStatus" class="privacy" aria-live="polite"></p>
+    </section>
+  </div>
+
+  <script src="../lib/risk-engine.js"></script>
+  <script src="../lib/scoring-adapter.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

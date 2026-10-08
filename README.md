@@ -35,12 +35,29 @@ risk score with the reasons behind it.
   reused by the popup, the content script, and the background service
   worker, so it is easy to extend or swap in a real ML model / API later.
 
+- **Options page** — open it from the popup's "Settings" link or the
+  extension's details page. Choose a sensitivity (Low / Balanced / High,
+  which shifts the Medium/High thresholds), manage the trusted-domain
+  allowlist, and optionally configure an external scoring provider.
+  Settings are stored in `chrome.storage.local` and applied by the popup,
+  content script and background worker.
+- **Pluggable scoring adapter** — [`extension/lib/scoring-adapter.js`](extension/lib/scoring-adapter.js)
+  is the single scoring interface. With a provider enabled, manual URL
+  checks send `POST {"url": "..."}` to your HTTPS endpoint (optional API key
+  placed in the `Authorization` header) and expect `{"score": 0-100}` or
+  `{"probability": 0-1}` plus optional `"reasons": [...]`, which are added
+  to `reasons` prefixed with the provider name. If the provider is
+  unconfigured or fails, the rule-based engine is used. No endpoint or key is
+  bundled; bulk page-link scanning always stays local.
+
 ## Privacy
 
 The extension is fully local. It reads the links on pages you visit and URLs
 you paste into the popup, scores them with rules running in your browser, and
 stores your allowlist/denylist and recent history in `chrome.storage.local`.
-Nothing is sent to any server or third party.
+Nothing is sent to any server or third party unless you explicitly enable an
+external scoring provider on the options page (then only manually checked
+URLs are sent to the endpoint you configured).
 
 ## Project structure
 
@@ -50,7 +67,9 @@ extension/
 ├─ background.js         # Service worker: messaging hub, badge, storage init
 ├─ content.js             # Scans links on the page and warns on suspicious ones
 ├─ lib/
-│  └─ risk-engine.js      # Shared rule-based URL risk-scoring logic
+│  ├─ risk-engine.js      # Shared rule-based URL risk-scoring logic
+│  └─ scoring-adapter.js  # Single scoring interface (provider + rule fallback)
+├─ options/                # Options page (sensitivity, allowlist, provider)
 ├─ popup/
 │  ├─ popup.html          # Popup UI markup
 │  ├─ popup.css           # Popup styling
@@ -88,9 +107,13 @@ straightforward.
 3. Click **Load unpacked** and select the [`extension/`](extension) folder.
 4. Pin the extension and click its icon to open the popup.
 
-## Roadmap ideas
+## Running tests
 
-- Replace/augment the rule-based engine with a trained ML model or a
-  threat-intelligence API while keeping the same return shape.
-- Add an options page for user-configurable sensitivity.
-- Add automated tests for `analyzeUrl` edge cases.
+Requires Node.js 18+ (no dependencies):
+
+```bash
+npm test
+```
+
+Tests live in [`tests/`](tests) and cover `analyzeUrl` edge cases and the
+scoring adapter's provider/fallback behavior.

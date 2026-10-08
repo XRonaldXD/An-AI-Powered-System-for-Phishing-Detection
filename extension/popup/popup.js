@@ -67,7 +67,14 @@ function showResult(analysis) {
 function analyze(value) {
   chrome.runtime.sendMessage({ type: "ANALYZE_URL", url: value }, (analysis) => {
     if (chrome.runtime.lastError || !analysis) {
-      analysis = self.PhishingRiskEngine.analyzeUrl(value);
+      self.PhishingScoringAdapter.loadSettings()
+        .then((settings) => self.PhishingScoringAdapter.analyzeLocal(value, settings))
+        .catch(() => self.PhishingScoringAdapter.analyzeLocal(value))
+        .then((fallback) => {
+          showResult(fallback);
+          loadHistory();
+        });
+      return;
     }
     showResult(analysis);
     loadHistory();
@@ -224,3 +231,8 @@ document.getElementById("clearHistoryBtn").addEventListener("click", async () =>
 
 renderLists();
 loadHistory();
+
+document.getElementById("openOptions").addEventListener("click", (event) => {
+  event.preventDefault();
+  chrome.runtime.openOptionsPage();
+});
